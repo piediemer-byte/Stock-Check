@@ -29,19 +29,21 @@ def analyze_news_sentiment(news_list):
 def get_ki_verdict(ticker_obj):
     inf = ticker_obj.info
     hist = ticker_obj.history(period="1y")
-    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten.", 0
+    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten.", 0, 0
     
     curr_p = float(hist['Close'].iloc[-1])
     score = 50
     reasons = []
     
-    # 1. Trend (SMA) - Gewichtung: 15
-    s50 = hist['Close'].rolling(50).mean().iloc[-1]
+    # 1. Trend (SMA)
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
-    if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Bullish (SMA 50 > 200).")
-    elif curr_p < s200: score -= 15; reasons.append("📉 Trend: Bearish (unter SMA 200).")
+    s50 = hist['Close'].rolling(50).mean().iloc[-1]
+    trend_reversal_p = s200 # Kursmarke für Trendbruch
+    
+    if curr_p > s50 > s200: score += 15; reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200).")
+    elif curr_p < s200: score -= 15; reasons.append(f"📉 Trend: Bearish (unter SMA 200).")
 
-    # 2. RSI (Überkauft/Überverkauft) - Gewichtung: 10
+    # 2. RSI
     delta = hist['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -50,47 +52,38 @@ def get_ki_verdict(ticker_obj):
     if rsi > 70: score -= 10; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}).")
     elif rsi < 30: score += 10; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}).")
 
-    # 3. Volatilität (ATR) - Gewichtung: 5
+    # 3. Volatilität
     high_low = hist['High'] - hist['Low']
     atr = high_low.rolling(14).mean().iloc[-1]
     vola_ratio = (atr / curr_p) * 100
     if vola_ratio > 4: score -= 5; reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%)")
 
-    # 4. Bilanz (Marge) - Gewichtung: 10
+    # 4. Bilanz & 5. Liquidität
     marge = inf.get('operatingMargins', 0)
     if marge > 0.15: score += 10; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
+    if inf.get('totalCash', 0) > inf.get('totalDebt', 0): score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
 
-    # 5. Bilanz (Liquidität) - Gewichtung: 5
-    cash = inf.get('totalCash', 0)
-    debt = inf.get('totalDebt', 0)
-    if cash > debt: score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
-
-    # 6. Bewertung (KGV/KUV) - Gewichtung: 10
+    # 6. Bewertung (KGV/KUV)
     kgv = inf.get('forwardPE', -1)
     kuv = inf.get('priceToSalesTrailing12Months', -1)
     if kgv > 0 and kgv < 18: score += 10; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}).")
     elif kgv <= 0 and kuv > 0 and kuv < 3: score += 10; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}).")
     
-    # 7. Volumen - Gewichtung: 10
-    avg_vol = hist['Volume'].tail(20).mean()
-    if hist['Volume'].iloc[-1] > avg_vol * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
-
-    # 8. Prognosen & News - Gewichtung: bis zu 20
-    news_val = analyze_news_sentiment(ticker_obj.news)
-    score += news_val
-    target = inf.get('targetMedianPrice', curr_p)
-    upside = (target / curr_p - 1) * 100
+    # 7. Volumen & 8. News/Analysten
+    if hist['Volume'].iloc[-1] > hist['Volume'].tail(20).mean() * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
+    score += analyze_news_sentiment(ticker_obj.news)
+    upside = (inf.get('targetMedianPrice', curr_p) / curr_p - 1) * 100
     if upside > 15: score += 10; reasons.append(f"🎯 Prognose: +{upside:.1f}% Upside.")
 
     if score >= 80: verdict = "💎 STRONG BUY"
     elif score >= 60: verdict = "🚀 BUY"
     elif score >= 35: verdict = "➡️ HOLD"
     else: verdict = "🛑 SELL"
-    return verdict, "\n".join(reasons), vola_ratio
+    return verdict, "\n".join(reasons), vola_ratio, trend_reversal_p
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="KI-Analyse Deep Dive", layout="centered")
-st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }</style>", unsafe_allow_html=True)
+st.set_page_config(page_title="KI-Analyse Intelligence", layout="centered")
+st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; } .matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
 st.title("🛡️ KI-Analyse Intelligence")
@@ -117,10 +110,13 @@ try:
         col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
-        verdict, reasons, current_vola = get_ki_verdict(ticker)
+        verdict, reasons, current_vola, reversal_p = get_ki_verdict(ticker)
         st.subheader(f"KI-Analyse: {verdict}")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
+        # TREND-UMKEHR ANZEIGE
+        st.markdown(f"<div class='reversal-box'>🚨 <b>Kritische Trend-Marke:</b> {reversal_p * eur_usd_rate:.2f} € ({reversal_p:.2f} $)<br><small>Fällt der Kurs nachhaltig unter diesen Wert, bricht der langfristige Aufwärtstrend.</small></div>", unsafe_allow_html=True)
+
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -142,40 +138,31 @@ try:
             st.write(f"📊 **{stücke} Stück** | **Invest:** {eff_inv:.2f} €")
             st.error(f"📍 **Stop-Loss Preis:** {sl_price:.2f} €")
             st.success(f"🎯 **Take-Profit (Order Limit):** {tp_price:.2f} €")
-            if crv >= 2.0: st.success(f"✅ **CRV: {crv:.2f}**")
-            elif crv >= 1.0: st.warning(f"⚖️ **CRV: {crv:.2f}**")
-            else: st.error(f"⚠️ **CRV: {crv:.2f}**")
+            st.info(f"⚖️ **CRV: {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- VOLLSTÄNDIGER STRATEGISCHER DEEP DIVE ---
         st.divider()
         st.subheader("🔍 Deep Dive: KI-Analyse Kriterien-Katalog")
         
-        st.markdown("### 1. Langfristiger Trend (SMA 50/200)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Die Basis der Analyse bildet der gleitende Durchschnitt der letzten 200 Tage (SMA 200) als Demarkationslinie zwischen Bullen- und Bärenmarkt. Ein 'Golden Cross' (SMA 50 kreuzt über SMA 200) signalisiert langfristiges Momentum (+15). Liegt der Kurs unter dem SMA 200, herrscht erhöhtes Crash-Risiko (-15).</p>", unsafe_allow_html=True)
+        st.markdown("### 1. Langfristiger Trend (SMA 50/200) & Umkehrpunkt")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Die KI-Analyse definiert den SMA 200 als Herzschlag des Trends. Liegt der Kurs darüber, ist das Fundament bullish. Der <b>Trend-Umkehr-Punkt</b> zeigt dir exakt den Preis, an dem der gleitende Durchschnitt liegt. Ein Durchbrechen nach unten würde das Ende des Bullenmarktes signalisieren.</p>", unsafe_allow_html=True)
         
+
         st.markdown("### 2. Relative Stärke (RSI 14)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Der RSI (Relative Strength Index) misst die Geschwindigkeit und Veränderung von Kursbewegungen. Werte über 70 signalisieren eine Überhitzung (Gefahr von Gewinnmitnahmen, -10 Pkt). Werte unter 30 deuten auf eine panikartige Überverkaufung hin, was oft einen Boden markiert (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Misst die Dynamik. Ein RSI über 70 gilt als 'überkauft' (Gefahr einer Korrektur), ein RSI unter 30 als 'überverkauft' (günstiges Einstiegsfenster).</p>", unsafe_allow_html=True)
         
 
-        st.markdown("### 3. Volatilitäts-Risiko (ATR)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte bei Gefahr.</b> Die 'Average True Range' misst die tägliche Schwankungsbreite. Steigt diese auf über 4% des aktuellen Kurses, stuft die KI-Analyse den Wert als 'instabil' ein. Dies schützt vor spekulativen Blasen, bei denen Stop-Loss-Marken durch normales Rauschen zu leicht gerissen werden.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Volatilitäts-Check (ATR)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte.</b> Berechnet das 'Rauschen' des Marktes. Hohe Volatilität erfordert weitere Stop-Loss-Abstände, um nicht unnötig ausgestoppt zu werden.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 4. Operative Profitabilität (Marge)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Die operative Marge zeigt, wie viel Cent von jedem Euro Umsatz nach Kosten als Gewinn verbleiben. Eine Marge > 15% beweist ein gesundes Geschäftsmodell und 'Preismacht' gegenüber Wettbewerbern (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Operative Marge & Cash-Bestand")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +15 Punkte (Gesamt).</b> Unternehmen mit Margen über 15% und einer Net-Cash-Position (mehr Barmittel als Schulden) werden bevorzugt, da sie immuner gegen Zinssteigerungen sind.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 5. Finanzielle Stabilität (Net-Cash)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +5 Punkte.</b> Die KI-Analyse vergleicht Barmittel mit den Gesamtschulden. Ein Unternehmen, das mehr Cash als Schulden hält, ist immun gegen steigende Zinsen und kann Krisen aus eigener Kraft überstehen (+5 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 5. Bewertung (KGV vs. KUV Fallback)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Klassische Unternehmen werden am KGV (< 18) gemessen. Wachstumsaktien in der Verlustzone werden über das KUV (< 3) bewertet, um Potenzial nicht zu übersehen.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 6. Bewertungs-Check (KGV & KUV)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Bei profitablen Firmen wird ein Forward KGV < 18 belohnt. Befindet sich das Unternehmen in der Verlustzone (negatives KGV), wechselt das System zum KUV (Kurs-Umsatz-Verhältnis). Ein KUV < 3 bei gleichzeitigem Wachstum wird als attraktive Bewertung für Zukunftsaktien gewertet.</p>", unsafe_allow_html=True)
-        
-
-        st.markdown("### 7. Institutionelles Momentum (Volumen)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Handelsvolumen ist der Treibstoff Trends. Ein Anstieg um mehr als 30% über den 20-Tage-Schnitt deutet darauf hin, dass große Fonds und Banken (Smart Money) Positionen aufbauen (+10 Pkt).</p>", unsafe_allow_html=True)
-
-        st.markdown("### 8. Analysten-Konsens & News-Sentiment")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: bis zu +20 Punkte.</b> Hier fließen zwei Faktoren zusammen: NLP-analysierte Schlagzeilen (zeitlich gewichtet, heute zählt mehr als gestern) und das Median-Kursziel der Wall-Street-Analysten. Ein Upside-Potenzial von >15% liefert die finale Bestätigung (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 6. Volumen & Analysten-Power")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +20 Punkte.</b> Berücksichtigt institutionelles Volumen (>130% Schnitt), zeit-gewichtete News-Sentiments und das Analysten-Kursziel (Upside > 15%).</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
