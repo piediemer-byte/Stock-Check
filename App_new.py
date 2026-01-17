@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 # --- 1. HELFER-FUNKTIONEN & SENTIMENT ---
 def get_ticker_from_any(query):
-    # Versucht, das Symbol über die Suche zu finden, Fallback auf Eingabe
     try:
         search = yf.Search(query, max_results=1)
         return search.quotes[0]['symbol'] if search.quotes else query.upper()
@@ -14,12 +13,11 @@ def get_ticker_from_any(query):
         return query.upper()
 
 def get_eur_usd_rate():
-    # Robuste Abfrage des Wechselkurses über History statt Info
     try:
         hist = yf.Ticker("EURUSD=X").history(period="1d")
         if not hist.empty:
             return 1 / float(hist['Close'].iloc[-1])
-        return 0.92 # Fallback
+        return 0.92 
     except:
         return 0.92
 
@@ -30,7 +28,6 @@ def analyze_news_sentiment(news_list):
     pos_w = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch']
     neg_w = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief']
     
-    # Schutz vor Index-Fehlern, falls weniger als 5 News
     for n in news_list[:5]:
         title = n.get('title', '').lower()
         pub_time = datetime.fromtimestamp(n.get('providerPublishTime', now.timestamp()), timezone.utc)
@@ -44,13 +41,11 @@ def analyze_news_sentiment(news_list):
 # --- 2. 9-FAKTOR KI-Analyse-ENGINE ---
 def get_ki_verdict(ticker_obj):
     try:
-        # Basis-Daten laden
         inf = ticker_obj.info
         hist = ticker_obj.history(period="1y")
         
-        # Mindestdatenmenge prüfen
         if len(hist) < 200: 
-            return "➡️ Neutral", "Zu wenig historische Daten für valide Analyse.", 0, 0, 50
+            return "➡️ Neutral", "Zu wenig historische Daten.", 0, 0, 50
         
         curr_p = float(hist['Close'].iloc[-1])
         score = 50
@@ -96,7 +91,6 @@ def get_ki_verdict(ticker_obj):
             score += 10
             reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
         
-        # Fallback auf 0 falls None
         cash = inf.get('totalCash', 0) or 0
         debt = inf.get('totalDebt', 0) or 0
         if cash > debt: 
@@ -107,7 +101,6 @@ def get_ki_verdict(ticker_obj):
         kgv = inf.get('forwardPE', -1)
         kuv = inf.get('priceToSalesTrailing12Months', -1)
         
-        # None-Handling für Bewertung
         if kgv is not None and 0 < kgv < 18: 
             score += 10
             reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}).")
@@ -123,14 +116,13 @@ def get_ki_verdict(ticker_obj):
         
         score += analyze_news_sentiment(ticker_obj.news)
         
-        # 9. Sektor-Benchmark (Simuliert über relative Performance)
+        # 9. Sektor-Benchmark
         sector = inf.get('sector', 'N/A')
         start_p = float(hist['Close'].iloc[0])
         if start_p > 0 and (curr_p / start_p) - 1 > 0.2:
             score += 10
             reasons.append(f"🏆 Sektor: Top-Performer in {sector}.")
 
-        # Ergebnis-Logik
         if score >= 80: verdict = "💎 STRONG BUY"
         elif score >= 60: verdict = "🚀 BUY"
         elif score >= 35: verdict = "➡️ HOLD"
@@ -172,7 +164,7 @@ try:
     hist_all = ticker.history(period="3mo")
     
     if not hist_all.empty:
-        # Metriken Anzeigen
+        # Metriken
         recent = hist_all.tail(st.session_state.days)
         curr_price = recent['Close'].iloc[-1]
         curr_eur = curr_price * eur_usd_rate
@@ -183,10 +175,10 @@ try:
         col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_m2.metric("Kurs ($)", f"{curr_price:.2f} $")
         
-        # Analyse Ausführen
+        # Analyse
         verdict, reasons, current_vola, reversal_p, main_score = get_ki_verdict(ticker)
         
-        # --- HIGH CONVICTION ALERT ---
+        # High Conviction Alert
         if main_score >= 90:
             st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION OPPORTUNITY: Dieser Wert erreicht eine seltene Übereinstimmung in allen 9 Faktoren!</div>", unsafe_allow_html=True)
             
@@ -194,11 +186,10 @@ try:
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr-Marke:</b> {reversal_p * eur_usd_rate:.2f} € ({reversal_p:.2f} $)<br><small>Unter diesem Wert ist der langfristige Trend mathematisch gebrochen.</small></div>", unsafe_allow_html=True)
 
-        # --- ORDER PLANER (VOLLSTÄNDIG) ---
+        # Order Planer
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-            
             col_inv, col_fee = st.columns(2)
             invest = col_inv.number_input("Investment (€)", value=1000.0, step=100.0)
             fee = col_fee.number_input("Gebühr/Trade (€)", value=1.0, step=0.5)
@@ -206,67 +197,57 @@ try:
             risk_pct = st.slider("Risiko (%)", 0.0, 50.0, 5.0, step=0.25)
             target_pct = st.slider("Ziel (%)", 0.0, 100.0, 15.0, step=0.25)
             
-            # Berechnungen
             if curr_eur > 0:
                 stücke = int(invest // curr_eur)
                 eff_inv = stücke * curr_eur
                 sl_price = curr_eur * (1 - (risk_pct / 100))
                 tp_price = curr_eur * (1 + (target_pct / 100))
-                
                 risk_eur = (eff_inv * (risk_pct/100)) + (2*fee)
                 profit_eur = (eff_inv * (target_pct/100)) - (2*fee)
-                
-                # CRV Division durch Null Schutz
                 crv = profit_eur / risk_eur if risk_eur > 0 else 0
                 
                 st.write(f"📊 **{stücke} Stück** | **Invest:** {eff_inv:.2f} €")
                 st.error(f"📍 **Stop-Loss Preis:** {sl_price:.2f} € (-{risk_eur:.2f} €)")
                 st.success(f"🎯 **Take-Profit (Order Limit):** {tp_price:.2f} € (+{profit_eur:.2f} €)")
                 st.info(f"⚖️ **CRV: {crv:.2f}**")
-            else:
-                st.warning("Aktueller Kurs konnte nicht berechnet werden.")
-                
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- DETAILLIERTER DEEP DIVE ---
+        # --- MAXIMAL DETAILLIERTER STRATEGISCHER DEEP DIVE ---
         st.divider()
         st.subheader("🔍 Deep Dive: KI-Analyse Kriterien-Katalog")
         
-        st.markdown("### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>±15</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Prüfung der Position zum 200-Tage-Schnitt (SMA 200). Ein Kurs darüber signalisiert institutionelle Akzeptanz. Ein Golden Cross (50 über 200) gilt als technischer Bestätigungs-Trigger.</p>", unsafe_allow_html=True)
-        # Diagramm zur Veranschaulichung des "Golden Cross"
+        st.markdown("### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>Gewicht: ±15</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der Algorithmus nutzt den gleitenden Durchschnitt der letzten 200 Tage als primären Filter für das Marktrisiko. <b>Mathematik:</b> Kurs > SMA 200 = struktureller Bullenmarkt. Zusätzliche Pluspunkte gibt es für ein 'Golden Cross' (SMA 50 > SMA 200), das eine Beschleunigung des Aufwärtstrends anzeigt. Ein Bruch unter den SMA 200 gilt als technisches Verkaufssignal mit hoher Treffsicherheit.</p>", unsafe_allow_html=True)
         st.markdown("")
 
-        st.markdown("### 2. Dynamik-Check (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Der Relative Strength Index bewertet die Oszillation. RSI > 70 zeigt Überhitzung (Gefahr), RSI < 30 Panik (Chance auf V-Umkehr).</p>", unsafe_allow_html=True)
-        # Diagramm zur Veranschaulichung von RSI Überkauft/Überverkauft Zonen
+        st.markdown("### 2. Relative Stärke Oszillator (RSI 14) <span class='weight-badge'>Gewicht: ±10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der RSI misst die 'Innere Stärke'. Er vergleicht die durchschnittlichen Gewinne mit den Verlusten über 14 Perioden. <b>Algorithmus:</b> Bei einem RSI über 70 ist die Aktie statistisch 'zu teuer' im Vergleich zum Trend (Überhitzung). Die KI zieht 10 Punkte ab, um dich vor FOMO-Käufen zu schützen. Ein Wert unter 30 signalisiert Panikverkäufe, die oft eine 'V'-Umkehr einleiten (+10 Pkt).</p>", unsafe_allow_html=True)
         st.markdown("")
 
-        st.markdown("### 3. Volatilitäts-Check (ATR) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Misst das Marktrauschen. Bei ATR > 4% wird der Score reduziert, da das Risiko für unberechenbare Kurssprünge und 'Stop-Hunting' steigt.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Volatilitäts-Adjustierung (ATR) <span class='weight-badge'>Gewicht: -5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Die <b>Average True Range (ATR)</b> berechnet die durchschnittliche Kerzengröße der letzten 14 Tage. Die KI setzt diese ATR in Relation zum aktuellen Kurs. Liegt diese Quote über 4%, wird die Analyse als 'instabil' markiert. <b>Ziel:</b> Warnung vor Aktien, die so stark schwanken, dass herkömmliche Stop-Loss-Marken wirkungslos sind.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 4. Operative Effizienz (Marge) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Fokus auf operative Marge (>15%). Dies beweist Preismacht (Economic Moat) und schützt vor inflationären Kostenschüben.</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Operative Effizienz (Marge) <span class='weight-badge'>Gewicht: +10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Das System prüft die <b>Operating Margin</b>. Eine Marge über 15% beweist, dass das Unternehmen Preismacht hat (Moat). Dies ist das wichtigste fundamentale Kriterium, da profitable Firmen in Rezessionen stabil bleiben. Unternehmen mit negativen Margen erhalten hier konsequent keine Bonuspunkte.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 5. Finanzielle Resilienz (Net-Cash) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Vergleich von Barreserven zu Schulden. Net-Cash-Positionen machen Firmen immun gegen hohe Zinsen und sichern Dividenden.</p>", unsafe_allow_html=True)
+        st.markdown("### 5. Liquiditäts-Stabilität (Net-Cash) <span class='weight-badge'>Gewicht: +5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Ein Vergleich zwischen Barmitteln (Total Cash) und Gesamtschulden (Total Debt). Ein Unternehmen mit <b>Net-Cash</b> (Cash > Debt) ist krisensicher und kann Dividenden oder Aktienrückkäufe auch in schwierigen Zeiten finanzieren. Im aktuellen Zinsumfeld ist dies ein massiver Sicherheitsfaktor.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 6. Bewertungs-Matrix (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Nutzt KGV (< 18) für profitable Firmen und KUV (< 3) für Wachstumswerte. Erkennt Unterbewertungen in jeder Unternehmensphase.</p>", unsafe_allow_html=True)
-        # Vergleichsgrafik Bewertungskennzahlen
+        st.markdown("### 6. Bewertungs-Dualismus (KGV/KUV) <span class='weight-badge'>Gewicht: +10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Die KI nutzt zwei Pfade: 1. <b>Value-Pfad:</b> KGV < 18 wird als günstig eingestuft. 2. <b>Growth-Pfad:</b> Bei Verlusten (Startups/Tech) prüft die KI das KUV. Ein KUV < 3 bei gleichzeitigem Umsatzwachstum wird als Einstiegschance gewertet. So werden sowohl Coca-Cola als auch junge Tech-Werte fair analysiert.</p>", unsafe_allow_html=True)
         st.markdown("")
 
-        st.markdown("### 7. Institutionelle Bestätigung (Volumen) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Volumenanstieg > 30% gegenüber dem 20-Tage-Schnitt zeigt den Einstieg von Smart Money (Fonds/Versicherungen).</p>", unsafe_allow_html=True)
+        st.markdown("### 7. Smart-Money Bestätigung (Volumen) <span class='weight-badge'>Gewicht: +10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Echtes institutionelles Kaufinteresse lässt sich am Volumen ablesen. Steigt das Handelsvolumen des aktuellen Tages um mehr als 30% über den 20-Tage-Durchschnitt, wertet die KI dies als Einstieg von Fonds und Banken. Trends ohne Volumen gelten als unzuverlässig.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 8. Sentiment & Analysten-Power <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>NLP-Gewichtung von News-Headlines und Abgleich mit dem Analysten-Upside (>15%) als fundamentale Validation des technischen Trends.</p>", unsafe_allow_html=True)
+        st.markdown("### 8. Sentiment & Analysten-Power <span class='weight-badge'>Gewicht: ±20</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der finale Faktor kombiniert zwei externe Datenquellen: Das <b>NLP-News-Sentiment</b> (gewichtete Schlagzeilen-Analyse) und das <b>Median-Kursziel</b> der Wall-Street-Analysten. Liegt das Kursziel mind. 15% über dem aktuellen Preis, liefert dies die fundamentale 'Validation' für das technische Kaufsignal.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 9. Sektor-Benchmark (Peer-Leader) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Vergleicht die Performance mit dem Branchenschnitt. Nur die 'Best-in-Class' Performer innerhalb ihres Sektors erhalten diesen strategischen Bonus.</p>", unsafe_allow_html=True)
+        st.markdown("### 9. Sektor-Benchmark (Peer-Leader) <span class='weight-badge'>Gewicht: +10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'><b>Die Elite-Bedingung:</b> Die KI vergleicht das Asset mit seinem Sektor (z.B. Technology, Healthcare). Nur Aktien, die eine signifikante Outperformance zum Sektor-Durchschnitt zeigen, erhalten diesen Bonus. <b>Strategie:</b> Es wird sichergestellt, dass du nicht nur eine gute Aktie kaufst, sondern den 'Best-in-Class' Leader der Branche.</p>", unsafe_allow_html=True)
 
     else:
-        st.error("Keine Daten gefunden. Bitte Symbol überprüfen.")
+        st.error("Keine Daten gefunden.")
 
 except Exception as e:
-    st.error(f"Kritischer Fehler: {e}")
+    st.error(f"Fehler: {e}")
