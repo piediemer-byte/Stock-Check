@@ -23,39 +23,34 @@ def analyze_news_sentiment(news_list):
 def get_ki_verdict(ticker_obj):
     inf = ticker_obj.info
     hist = ticker_obj.history(period="1y")
-    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten für 6-Faktor-Check."
+    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten."
     
     curr_p = float(hist['Close'].iloc[-1])
     score = 50
     reasons = []
     
-    # Faktor 1: SMA Trend
+    # Tooltip-Zusammenstellung (Punkte-Logik)
     s50 = hist['Close'].rolling(50).mean().iloc[-1]
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
     if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Bullish (SMA 50 > 200).")
     elif curr_p < s200: score -= 15; reasons.append("📉 Trend: Bearish (unter SMA 200).")
 
-    # Faktor 2: Bilanz
     marge = inf.get('operatingMargins', 0)
     cash = inf.get('totalCash', 0)
     debt = inf.get('totalDebt', 0)
     if marge > 0.15: score += 10; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
     if cash > debt: score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
 
-    # Faktor 3: KGV
     kgv = inf.get('forwardPE', 0)
     if 0 < kgv < 18: score += 10; reasons.append(f"💎 KGV: Günstig bewertet ({kgv:.1f}).")
 
-    # Faktor 4: Volumen
     avg_vol = hist['Volume'].tail(20).mean()
     if hist['Volume'].iloc[-1] > avg_vol * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
 
-    # Faktor 5: News
     news_score = analyze_news_sentiment(ticker_obj.news)
     score += news_score
     if news_score > 0: reasons.append("📰 News: Positives Sentiment.")
 
-    # Faktor 6: Prognosen
     target = inf.get('targetMedianPrice', curr_p)
     upside = (target / curr_p - 1) * 100
     if upside > 15: score += 10; reasons.append(f"🎯 Prognose: +{upside:.1f}% Upside.")
@@ -64,7 +59,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI Trading Days", layout="centered")
+st.set_page_config(page_title="StockAI Analytics", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -73,61 +68,58 @@ search_query = st.text_input("Suche (Name, ISIN, Ticker):", value="Apple")
 ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
-# Trading-Day Logik für Zeitachsen
+# Trading Days Logik
+if 'days' not in st.session_state: st.session_state.days = 22
 c1, c2, c3 = st.columns(3)
-if 'days' not in st.session_state: st.session_state.days = 22 # Default 1 Monat
 if c1.button("1T"): st.session_state.days = 2
 if c2.button("1W"): st.session_state.days = 6
 if c3.button("1M"): st.session_state.days = 22
 
 try:
     ticker = yf.Ticker(ticker_symbol)
-    # Wir laden etwas mehr Daten, um sicher genug Handelstage (Business Days) zu haben
-    hist_p = ticker.history(period="3mo") 
-    
-    if not hist_p.empty:
-        # Extrahiere nur die benötigte Anzahl an Handelstagen vom Ende der Liste
-        recent_data = hist_p.tail(st.session_state.days)
-        
-        curr_usd = recent_data['Close'].iloc[-1]
-        curr_eur = curr_usd * eur_usd_rate
-        # Performance-Berechnung basierend auf dem ersten verfügbaren Handelstag im Set
-        perf = ((curr_usd / recent_data['Close'].iloc[0]) - 1) * 100
+    hist_all = ticker.history(period="3mo")
+    if not hist_all.empty:
+        recent = hist_all.tail(st.session_state.days)
+        curr_eur = recent['Close'].iloc[-1] * eur_usd_rate
+        perf = ((recent['Close'].iloc[-1] / recent['Close'].iloc[0]) - 1) * 100
         
         st.caption(f"Asset: **{ticker.info.get('longName', ticker_symbol)}**")
-        m1, m2 = st.columns(2)
-        m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
-        m2.metric("Kurs ($)", f"{curr_usd:.2f} $")
+        col_m1, col_m2 = st.columns(2)
+        col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
+        col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
+        # --- KI-URTEIL MIT TOOLTIP ---
         verdict, reasons = get_ki_verdict(ticker)
-        st.subheader(f"KI: {verdict}")
+        
+        # Tooltip Inhalt
+        ki_help = """
+        **Zusammensetzung der KI-Bewertung:**
+        - **SMA Trend:** ±15 Pkt (Kurs vs. 50/200 Tage Linie)
+        - **Bilanz:** +15 Pkt (Marge > 15% & Cash-Reserve)
+        - **KGV:** +10 Pkt (Bewertung unter 18)
+        - **Volumen:** +10 Pkt (Handelsaktivität > 30% über Schnitt)
+        - **News:** ±10 Pkt (KI-Textanalyse der letzten 5 Meldungen)
+        - **Prognose:** +10 Pkt (Analysten-Kursziel > 15% Upside)
+        
+        *Score-Skala: >75 = Strong Buy | <35 = Sell*
+        """
+        st.subheader(f"KI: {verdict}", help=ki_help)
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # --- ORDER PLANER ---
+        # ORDER PLANER
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-            invest_input = st.number_input("Gewünschtes Investment (€)", value=1000.0, step=100.0)
+            invest = st.number_input("Investment (€)", value=1000.0, step=100.0)
             risk_pct = st.slider("Risiko bis Stop-Loss (%)", 1.0, 20.0, 5.0)
-            target_pct = st.slider("Ziel bis Take-Profit (%)", 1.0, 50.0, 15.0)
+            target_pct = st.slider("Take-Profit (%)", 1.0, 50.0, 15.0)
             
-            stücke = int(invest_input // curr_eur)
-            reales_invest = stücke * curr_eur
-            sl_preis = curr_eur * (1 - (risk_pct / 100))
-            tp_preis = curr_eur * (1 + (target_pct / 100))
-            
-            risk_eur = reales_invest * (risk_pct / 100)
-            profit_eur = reales_invest * (target_pct / 100)
-            crv = target_pct / risk_pct if risk_pct > 0 else 0
-            
-            st.divider()
-            st.write(f"📊 **Kaufmenge:** {stücke} Stück")
-            st.write(f"💰 **Effektives Investment:** {reales_invest:.2f} €")
-            st.error(f"📍 **STOP-LOSS bei: {sl_preis:.2f} €**")
-            st.write(f"📉 Risiko im Ernstfall: -{risk_eur:.2f} €")
-            st.success(f"🎯 **TAKE-PROFIT bei: {tp_preis:.2f} €**")
-            st.write(f"📈 Potenzieller Gewinn: +{profit_eur:.2f} €")
-            st.info(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
+            stücke = int(invest // curr_eur)
+            eff_inv = stücke * curr_eur
+            st.write(f"📊 **Kaufmenge:** {stücke} Stück | **Invest:** {eff_inv:.2f} €")
+            st.error(f"📍 **STOP-LOSS bei: {curr_eur*(1-risk_pct/100):.2f} €** (-{eff_inv*(risk_pct/100):.2f}€)")
+            st.success(f"🎯 **TAKE-PROFIT bei: {curr_eur*(1+target_pct/100):.2f} €** (+{eff_inv*(target_pct/100):.2f}€)")
+            st.info(f"⚖️ **CRV: {(target_pct/risk_pct):.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
