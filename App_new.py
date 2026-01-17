@@ -267,7 +267,6 @@ try:
         Der **Moving Average Convergence Divergence** zeigt das Zusammenspiel zweier exponentieller Durchschnitte. 
         Ein bullishes Crossover signalisiert, dass das Kaufinteresse gerade massiv zunimmt und ein neuer Aufwärtstrend geboren wird.
         """)
-        [attachment_0](attachment)
 
         # Faktor 11: Wachstums-Preis-Effizienz (PEG)
         st.markdown("### 11. PEG-Ratio (Growth at a Reasonable Price) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
@@ -276,7 +275,7 @@ try:
         Ein PEG von **1.0** bedeutet: Die Aktie ist exakt so teuer, wie sie wächst. Ein Wert darunter ist ein massives Kaufsignal (Unterbewertung trotz Wachstum).
         """)
 
-          else:
+    else:
         st.error("Daten konnten nicht abgerufen werden.")
 
 except Exception as e:
