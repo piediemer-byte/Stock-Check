@@ -2,7 +2,18 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# --- 1. KI-ENGINE (Fokus: Technik & Fundament) ---
+# --- 1. SMART SEARCH LOGIK ---
+def get_ticker_from_any(query):
+    try:
+        # Suche über Yahoo Finance API
+        search = yf.Search(query, max_results=1)
+        if search.quotes:
+            return search.quotes[0]['symbol']
+        return query.upper() # Fallback zum Original
+    except:
+        return query.upper()
+
+# --- 2. KI-ENGINE ---
 def calculate_rsi(data, window=14):
     if len(data) < window + 1: return 50
     delta = data['Close'].diff()
@@ -14,7 +25,7 @@ def calculate_rsi(data, window=14):
 def get_ki_verdict(ticker_obj):
     inf = ticker_obj.info
     hist = ticker_obj.history(period="1y")
-    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten für Analyse."
+    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten für SMA-Check."
     
     curr_p = float(hist['Close'].iloc[-1])
     s50 = float(hist['Close'].rolling(50).mean().iloc[-1])
@@ -37,8 +48,8 @@ def get_ki_verdict(ticker_obj):
     verdict = "🚀 STRONG BUY" if score >= 70 else ("🛑 SELL" if score <= 35 else "➡️ HOLD")
     return verdict, "\n".join(reasons)
 
-# --- 2. UI SETUP ---
-st.set_page_config(page_title="StockAI Mobile Pro", layout="centered")
+# --- 3. UI SETUP ---
+st.set_page_config(page_title="StockAI Smart Search", layout="centered")
 st.markdown("""
 <style>
     .status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; }
@@ -47,9 +58,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. APP ---
+# --- 4. APP ---
 st.title("🛡️ StockAI Intelligence")
-ticker_input = st.text_input("Symbol:", value="AAPL").upper()
+search_query = st.text_input("Suche (Name, ISIN oder Ticker):", value="Apple", help="Z.B. 'Tesla', 'US88160R1014' oder 'TSLA'")
+
+# Ticker Auflösung
+ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
 if 'p' not in st.session_state: st.session_state.p = '1mo'
@@ -59,7 +73,7 @@ if c2.button("1W"): st.session_state.p = '5d'
 if c3.button("1M"): st.session_state.p = '1mo'
 
 try:
-    ticker = yf.Ticker(ticker_input)
+    ticker = yf.Ticker(ticker_symbol)
     hist_p = ticker.history(period=st.session_state.p)
     
     if not hist_p.empty:
@@ -67,7 +81,8 @@ try:
         curr_eur = curr_usd * eur_usd_rate
         perf = ((curr_usd / hist_p['Close'].iloc[0]) - 1) * 100
         
-        # Kurs Metrics
+        # Kurs Metrics & Info
+        st.caption(f"Gefunden: **{ticker.info.get('longName', ticker_symbol)}** ({ticker_symbol})")
         col_a, col_b = st.columns(2)
         col_a.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_b.metric("Kurs ($)", f"{curr_usd:.2f} $")
@@ -77,50 +92,29 @@ try:
         st.subheader(f"KI-Urteil: {verdict}")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # --- ORDER PLANER (MIT ALLEN ERGEBNISSEN) ---
+        # ORDER PLANER
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
             invest_input = st.number_input("Gewünschtes Investment (€)", value=1000.0, step=100.0)
-            
             risk_pct = st.slider("Risiko bis Stop-Loss (%)", 1.0, 20.0, 5.0)
             target_pct = st.slider("Ziel bis Take-Profit (%)", 1.0, 50.0, 15.0)
             
-            # Berechnungen
             stücke = int(invest_input // curr_eur)
             reales_invest = stücke * curr_eur
             sl_preis = curr_eur * (1 - (risk_pct / 100))
             tp_preis = curr_eur * (1 + (target_pct / 100))
             
-            risk_eur = reales_invest * (risk_pct / 100)
-            profit_eur = reales_invest * (target_pct / 100)
-            crv = target_pct / risk_pct if risk_pct > 0 else 0
-            
-            # Ergebnisanzeige
             st.divider()
-            st.write(f"📊 **Kaufmenge:** {stücke} Stück")
-            st.write(f"💰 **Effektives Investment:** {reales_invest:.2f} €")
-            
-            st.error(f"📍 **STOP-LOSS bei: {sl_preis:.2f} €**")
-            st.write(f"📉 Risiko im Ernstfall: -{risk_eur:.2f} €")
-            
-            st.success(f"🎯 **TAKE-PROFIT bei: {tp_preis:.2f} €**")
-            st.write(f"📈 Potenzieller Gewinn: +{profit_eur:.2f} €")
-            
-            st.info(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
+            st.write(f"📊 **Kaufmenge:** {stücke} Stück | **Effektiv:** {reales_invest:.2f} €")
+            st.error(f"📍 **STOP-LOSS bei: {sl_preis:.2f} €** (-{reales_invest*(risk_pct/100):.2f}€)")
+            st.success(f"🎯 **TAKE-PROFIT bei: {tp_preis:.2f} €** (+{reales_invest*(target_pct/100):.2f}€)")
+            st.info(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {(target_pct/risk_pct):.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Glossar & Bearish
         st.divider()
-        with st.expander("📚 Bearishe Warnsignale & Erklärung"):
-            st.markdown("""
-            <b>⚠️ Bearishe Warnsignale:</b>
-            <div class='bear-box'>
-            • <b>Death Cross:</b> SMA 50 fällt unter SMA 200.<br>
-            • <b>Double Top:</b> Kurs scheitert wiederholt am Widerstand.<br>
-            • <b>RSI Divergenz:</b> Kurs steigt, aber Indikator fällt bereits.
-            </div>
-            """, unsafe_allow_html=True)
+        with st.expander("📚 Bearishe Warnsignale"):
+            st.markdown("<div class='bear-box'>• <b>Death Cross:</b> SMA 50 fällt unter SMA 200.<br>• <b>Double Top:</b> Kurs scheitert wiederholt am Widerstand.</div>", unsafe_allow_html=True)
 
 except Exception as e:
-    st.error(f"Fehler: {e}")
+    st.error(f"Suche fehlgeschlagen für '{search_query}'. Bitte Ticker direkt nutzen.")
