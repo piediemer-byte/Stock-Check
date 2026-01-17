@@ -64,7 +64,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI Full", layout="centered")
+st.set_page_config(page_title="StockAI Trading Days", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -73,19 +73,26 @@ search_query = st.text_input("Suche (Name, ISIN, Ticker):", value="Apple")
 ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
+# Trading-Day Logik für Zeitachsen
 c1, c2, c3 = st.columns(3)
-if 'p' not in st.session_state: st.session_state.p = '1mo'
-if c1.button("1T"): st.session_state.p = '1d'
-if c2.button("1W"): st.session_state.p = '5d'
-if c3.button("1M"): st.session_state.p = '1mo'
+if 'days' not in st.session_state: st.session_state.days = 22 # Default 1 Monat
+if c1.button("1T"): st.session_state.days = 2
+if c2.button("1W"): st.session_state.days = 6
+if c3.button("1M"): st.session_state.days = 22
 
 try:
     ticker = yf.Ticker(ticker_symbol)
-    hist_p = ticker.history(period=st.session_state.p)
+    # Wir laden etwas mehr Daten, um sicher genug Handelstage (Business Days) zu haben
+    hist_p = ticker.history(period="3mo") 
+    
     if not hist_p.empty:
-        curr_usd = hist_p['Close'].iloc[-1]
+        # Extrahiere nur die benötigte Anzahl an Handelstagen vom Ende der Liste
+        recent_data = hist_p.tail(st.session_state.days)
+        
+        curr_usd = recent_data['Close'].iloc[-1]
         curr_eur = curr_usd * eur_usd_rate
-        perf = ((curr_usd / hist_p['Close'].iloc[0]) - 1) * 100
+        # Performance-Berechnung basierend auf dem ersten verfügbaren Handelstag im Set
+        perf = ((curr_usd / recent_data['Close'].iloc[0]) - 1) * 100
         
         st.caption(f"Asset: **{ticker.info.get('longName', ticker_symbol)}**")
         m1, m2 = st.columns(2)
@@ -96,7 +103,7 @@ try:
         st.subheader(f"KI: {verdict}")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # --- VOLLSTÄNDIGER ORDER PLANER ---
+        # --- ORDER PLANER ---
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -116,13 +123,10 @@ try:
             st.divider()
             st.write(f"📊 **Kaufmenge:** {stücke} Stück")
             st.write(f"💰 **Effektives Investment:** {reales_invest:.2f} €")
-            
             st.error(f"📍 **STOP-LOSS bei: {sl_preis:.2f} €**")
             st.write(f"📉 Risiko im Ernstfall: -{risk_eur:.2f} €")
-            
             st.success(f"🎯 **TAKE-PROFIT bei: {tp_preis:.2f} €**")
             st.write(f"📈 Potenzieller Gewinn: +{profit_eur:.2f} €")
-            
             st.info(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
