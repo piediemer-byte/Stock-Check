@@ -196,47 +196,87 @@ try:
             st.success(f"🎯 **Take-Profit:** {tp_price:.2f} € (+{profit_eur:.2f} €)")
             st.info(f"⚖️ **CRV: {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
-
-      # --- MAXIMAL DETAILLIERTER STRATEGISCHER DEEP DIVE ---
+        # --- MAXIMAL DETAILLIERTER STRATEGISCHER DEEP DIVE ---
         st.divider()
         st.subheader("🔍 Strategischer Deep Dive: Die 11-Faktor-Matrix")
         
-        st.markdown("### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>±15</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Prüfung der Position zum 200-Tage-Schnitt. Kurs > SMA 200 signalisiert institutionelle Akzeptanz. Ein Golden Cross (50er über 200er) gilt als massives technisches Kaufsignal.</p>", unsafe_allow_html=True)
-        st.markdown("")
+        # Faktor 1: Markt-Phasierung
+        st.markdown("### 1. Markt-Phasierung (Institutionelles Sentiment) <span class='weight-badge'>±15</span>", unsafe_allow_html=True)
+        st.markdown(f"""
+        Die Position des Kurses zum **SMA 200** ({reversal_p:.2f} $) ist der wichtigste Indikator für den langfristigen Trend. 
+        * **Bullish:** Liegt der Kurs über dem SMA 200, gilt das Asset als 'gesund'. Große Fonds und Institutionen nutzen diese Linie oft als Kaufzone.
+        * **Trend-Bestätigung:** Ein Kurs über dem SMA 50 signalisiert kurzfristiges Momentum innerhalb des langfristigen Aufwärtstrends.
+        """)
+        
+        # Faktor 2: Dynamik (RSI)
+        st.markdown("### 2. Relative Stärke Index (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Der RSI ist ein Oszillator, der die Geschwindigkeit und Veränderung von Kursbewegungen misst. 
+        * **Überkauft (>70):** Die Gier im Markt ist hoch, eine Korrektur ist statistisch wahrscheinlich.
+        * **Überverkauft (<30):** Extreme Panik herrscht vor – oft ein antizyklischer Einstiegspunkt.
+        """)
+        
 
-        st.markdown("### 2. Dynamik (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Der RSI misst die innere Stärke. RSI > 70 zeigt Überhitzung (Gefahr), RSI < 30 Panik (Chance).</p>", unsafe_allow_html=True)
-        st.markdown("")
+        # Faktor 3: Volatilitäts-Check (ATR)
+        st.markdown("### 3. Volatilitäts-Profil (ATR-Ratio) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
+        st.markdown(f"""
+        Die **Average True Range (ATR)** misst das Marktrauschen. 
+        Dein aktueller Wert liegt bei **{current_vola:.2f}%**. 
+        Ein Wert über 4% deutet auf spekulatives Verhalten hin. Hohe Volatilität erhöht die Wahrscheinlichkeit, unglücklich aus einem Stop-Loss geworfen zu werden.
+        """)
 
-        st.markdown("### 3. Volatilität (ATR) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Die ATR misst das 'Rauschen'. Beträgt die tägliche Schwankung mehr als 4% des Kurses, wird das Risiko für unberechenbare Kurssprünge als zu hoch eingestuft.</p>", unsafe_allow_html=True)
+        # Faktor 4 & 5: Bilanz-Qualität
+        st.markdown("### 4. & 5. Fundamentale Resilienz (Marge & Cash) <span class='weight-badge'>+15</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Hier prüft die KI die 'Burganlage' (Moat) des Unternehmens:
+        * **Operating Margin > 15%:** Beweist Preismacht. Das Unternehmen kann steigende Kosten an Kunden weitergeben.
+        * **Net-Cash:** Ein Unternehmen, das mehr Cash als Schulden hat, ist immun gegen steigende Zinsen und kann in Krisen Konkurrenten aufkaufen.
+        """)
 
-        st.markdown("### 4. Operative Effizienz (Marge) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Operating Margin > 15% beweist Preismacht. Ein Kernfaktor für fundamentale Stabilität gegen Inflation.</p>", unsafe_allow_html=True)
+        # Faktor 6: Bewertung (Multiples)
+        st.markdown("### 6. Value-Check (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Wachstum darf nicht um jeden Preis gekauft werden. 
+        * Ein **KGV < 18** gilt historisch als attraktiv für etablierte Firmen. 
+        * Bei jungen Tech-Werten ohne Gewinn weicht die KI auf das **KUV (< 3)** aus, um eine Überbewertung (Hype) zu vermeiden.
+        """)
 
-        st.markdown("### 5. Krisenfestigkeit (Net-Cash) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Vergleich von Barreserven zu Schulden. Net-Cash-Positionen machen Firmen immun gegen hohe Zinsen.</p>", unsafe_allow_html=True)
+        # Faktor 7: Smart-Money Flow
+        st.markdown("### 7. Volumen-Analyse <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("""
+        'Volume precedes price' (Volumen geht dem Preis voraus). 
+        Steigt der Kurs bei einem Volumen, das 30% über dem Schnitt liegt, deutet dies auf **Akkumulation** durch institutionelle Anleger hin. Es ist kein Zufall, sondern gezieltes Kaufen.
+        """)
 
-        st.markdown("### 6. Bewertung (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Prüft KGV (< 18) oder KUV (< 3) für Wachstumswerte. Verhindert den Kauf von überteuerten Hype-Titeln.</p>", unsafe_allow_html=True)
+        # Faktor 8: NLP Sentiment-Score
+        st.markdown("### 8. Mediales Echo (Sentiment) <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Die KI scannt die letzten 5 Schlagzeilen. Wir nutzen eine Zeitgewichtung: News der letzten 24h zählen voll, ältere News weniger. 
+        Dies fängt plötzliche Gewinnwarnungen oder Upgrades von Analysten (Goldman Sachs, Morgan Stanley etc.) sofort ab.
+        """)
 
-        st.markdown("### 7. Smart-Money (Volumen) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Volumenanstieg > 30% über Schnitt zeigt, dass große Fonds Positionen aufbauen.</p>", unsafe_allow_html=True)
+        # Faktor 9: Relative Stärke (Sektor)
+        st.markdown("### 9. Outperformance-Check <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Ein Bonus wird nur vergeben, wenn die Aktie eine Performance von >20% im letzten Jahr zeigt. Wir suchen die 'Alpha-Tiere' eines Sektors, nicht die Nachzügler.
+        """)
 
-        st.markdown("### 8. Sentiment & Analysten <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>KI-Gewichtung von News-Headlines und Analysten-Kurszielen (>15% Upside) als fundamentale Bestätigung.</p>", unsafe_allow_html=True)
+        # Faktor 10: Momentum-Bestätigung (MACD)
+        st.markdown("### 10. MACD Trend-Konvergenz <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Der **Moving Average Convergence Divergence** zeigt das Zusammenspiel zweier exponentieller Durchschnitte. 
+        Ein bullishes Crossover signalisiert, dass das Kaufinteresse gerade massiv zunimmt und ein neuer Aufwärtstrend geboren wird.
+        """)
+        [attachment_0](attachment)
 
-        st.markdown("### 9. Sektor-Benchmark <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Vergleicht die Performance mit dem Sektor. Nur Branchenführer erhalten diesen Bonus.</p>", unsafe_allow_html=True)
+        # Faktor 11: Wachstums-Preis-Effizienz (PEG)
+        st.markdown("### 11. PEG-Ratio (Growth at a Reasonable Price) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("""
+        Das **PEG-Ratio** ist die Königsklasse der Bewertung. Es setzt das KGV ins Verhältnis zum erwarteten Gewinnwachstum. 
+        Ein PEG von **1.0** bedeutet: Die Aktie ist exakt so teuer, wie sie wächst. Ein Wert darunter ist ein massives Kaufsignal (Unterbewertung trotz Wachstum).
+        """)
 
-        st.markdown("### 10. Momentum-Bestätigung (MACD) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Der <b>MACD (Moving Average Convergence Divergence)</b> berechnet die Differenz zweier exponentieller Durchschnitte. Wenn die MACD-Linie die Signallinie von unten nach oben kreuzt, bestätigt dies ein bullishes Momentum und signalisiert, dass der Trend an Kraft gewinnt.</p>", unsafe_allow_html=True)
-
-        st.markdown("### 11. Wachstum zum Preis (PEG Ratio) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("<p class='matrix-desc'>Das <b>PEG-Ratio (Price/Earnings-to-Growth)</b> setzt das KGV ins Verhältnis zum Gewinnwachstum. Ein Wert zwischen 0,5 und 1,5 gilt als 'Fair Value' für Wachstumsaktien. Es stellt sicher, dass man nicht nur eine Aktie mit niedrigem KGV kauft, sondern eine, deren Preis durch echtes Wachstum gerechtfertigt ist.</p>", unsafe_allow_html=True)
-
-    else:
+          else:
         st.error("Daten konnten nicht abgerufen werden.")
 
 except Exception as e:
