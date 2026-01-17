@@ -38,7 +38,7 @@ def get_ki_verdict(ticker_obj):
     # 1. Trend (SMA)
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
     s50 = hist['Close'].rolling(50).mean().iloc[-1]
-    trend_reversal_p = s200 # Kursmarke für Trendbruch
+    trend_reversal_p = s200 
     
     if curr_p > s50 > s200: score += 15; reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200).")
     elif curr_p < s200: score -= 15; reasons.append(f"📉 Trend: Bearish (unter SMA 200).")
@@ -52,7 +52,7 @@ def get_ki_verdict(ticker_obj):
     if rsi > 70: score -= 10; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}).")
     elif rsi < 30: score += 10; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}).")
 
-    # 3. Volatilität
+    # 3. Volatilität (ATR)
     high_low = hist['High'] - hist['Low']
     atr = high_low.rolling(14).mean().iloc[-1]
     vola_ratio = (atr / curr_p) * 100
@@ -82,7 +82,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons), vola_ratio, trend_reversal_p
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="KI-Analyse Intelligence", layout="centered")
+st.set_page_config(page_title="KI-Analyse Expert", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; } .matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -114,8 +114,7 @@ try:
         st.subheader(f"KI-Analyse: {verdict}")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # TREND-UMKEHR ANZEIGE
-        st.markdown(f"<div class='reversal-box'>🚨 <b>Kritische Trend-Marke:</b> {reversal_p * eur_usd_rate:.2f} € ({reversal_p:.2f} $)<br><small>Fällt der Kurs nachhaltig unter diesen Wert, bricht der langfristige Aufwärtstrend.</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr-Marke:</b> {reversal_p * eur_usd_rate:.2f} € ({reversal_p:.2f} $)<br><small>Unter diesem Wert gilt der langfristige Aufwärtstrend als mathematisch gebrochen.</small></div>", unsafe_allow_html=True)
 
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
@@ -142,27 +141,28 @@ try:
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
-        st.subheader("🔍 Deep Dive: KI-Analyse Kriterien-Katalog")
+        st.subheader("🔍 Deep Dive: KI-Analyse-Strategie Protokoll")
         
-        st.markdown("### 1. Langfristiger Trend (SMA 50/200) & Umkehrpunkt")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Die KI-Analyse definiert den SMA 200 als Herzschlag des Trends. Liegt der Kurs darüber, ist das Fundament bullish. Der <b>Trend-Umkehr-Punkt</b> zeigt dir exakt den Preis, an dem der gleitende Durchschnitt liegt. Ein Durchbrechen nach unten würde das Ende des Bullenmarktes signalisieren.</p>", unsafe_allow_html=True)
+        st.markdown("### 1. Trend-Architektur (SMA 50/200)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Der SMA 200 (Gleitender Durchschnitt der letzten 200 Tage) dient als institutionelle Trennlinie. Ein Kurs darüber gilt als gesund. Befindet sich der Kurs zusätzlich über dem SMA 50, erkennt die KI-Analyse ein starkes Momentum. Der Trend-Umkehr-Punkt zeigt dir exakt die Marke, bei deren Unterschreitung die KI-Analyse auf 'Bearish' umschalten würde.</p>", unsafe_allow_html=True)
         
 
         st.markdown("### 2. Relative Stärke (RSI 14)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Misst die Dynamik. Ein RSI über 70 gilt als 'überkauft' (Gefahr einer Korrektur), ein RSI unter 30 als 'überverkauft' (günstiges Einstiegsfenster).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Der RSI misst, ob eine Aktie im Vergleich zu ihrer eigenen Historie zu schnell gestiegen oder gefallen ist. Ein RSI > 70 deutet auf Überhitzung hin (-10 Pkt), während ein RSI < 30 auf eine massive Panik im Markt hindeutet, was oft ein Kaufsignal darstellt (+10 Pkt).</p>", unsafe_allow_html=True)
         
 
-        st.markdown("### 3. Volatilitäts-Check (ATR)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte.</b> Berechnet das 'Rauschen' des Marktes. Hohe Volatilität erfordert weitere Stop-Loss-Abstände, um nicht unnötig ausgestoppt zu werden.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Volatilitäts-Faktor (ATR-Ratio)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte bei Instabilität.</b> Über die Average True Range (ATR) berechnet die KI-Analyse das tägliche Grundrauschen. Beträgt die Vola mehr als 4% des Kurses, ist die Aktie hochspekulativ. Das System zieht Punkte ab, da hier das Risiko für plötzliche Stop-Loss-Ketten-Auslösungen steigt.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 4. Operative Marge & Cash-Bestand")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +15 Punkte (Gesamt).</b> Unternehmen mit Margen über 15% und einer Net-Cash-Position (mehr Barmittel als Schulden) werden bevorzugt, da sie immuner gegen Zinssteigerungen sind.</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Operative Qualität (Marge & Cash)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +15 Punkte (kombiniert).</b> Unternehmen mit einer operativen Marge > 15% beweisen Preismacht. Die KI-Analyse prüft zudem, ob mehr Cash als Schulden vorhanden sind (Net-Cash), was die Firma immun gegen Zinsänderungen der Zentralbanken macht.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 5. Bewertung (KGV vs. KUV Fallback)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Klassische Unternehmen werden am KGV (< 18) gemessen. Wachstumsaktien in der Verlustzone werden über das KUV (< 3) bewertet, um Potenzial nicht zu übersehen.</p>", unsafe_allow_html=True)
+        st.markdown("### 5. Multi-Bewertung (KGV & KUV)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Das System nutzt einen hybriden Ansatz: Bei Gewinnen wird ein KGV < 18 gesucht. Bei Wachstumsaktien ohne Gewinn wird automatisch auf das KUV gewechselt. Ein KUV < 3 bei gleichzeitigem Umsatzwachstum wird als Unterbewertung eingestuft.</p>", unsafe_allow_html=True)
+        
 
-        st.markdown("### 6. Volumen & Analysten-Power")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +20 Punkte.</b> Berücksichtigt institutionelles Volumen (>130% Schnitt), zeit-gewichtete News-Sentiments und das Analysten-Kursziel (Upside > 15%).</p>", unsafe_allow_html=True)
+        st.markdown("### 6. Markterwartung (Sentiment & Upside)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +20 Punkte.</b> Hier fließen zwei Datenströme zusammen: Erstens das NLP-News-Sentiment, das aktuelle Nachrichten zeit-gewichtet bewertet. Zweitens das Analysten-Upside-Ziel. Liegt der institutionelle Konsens mehr als 15% über dem aktuellen Kurs, liefert dies die fundamentale Bestätigung.</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
