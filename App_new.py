@@ -14,7 +14,7 @@ def calculate_rsi(data, window=14):
     return 100 - (100 / (1 + rs))
 
 @st.cache_data(ttl=3600)
-def get_industry_recommendations(industry, usd_to_eur):
+def get_industry_recommendations(industry, eur_val):
     sectors = {
         "Verteidigung/Militär": ["LMT", "RTX", "NOC", "GD", "BA", "RHM.DE", "HENS.DE", "BAESY", "LHX", "RKLB"],
         "Lebensmittel": ["KO", "PEP", "PG", "NESN.SW", "MDLZ", "COST", "WMT", "TSN", "ADM", "K"],
@@ -29,7 +29,7 @@ def get_industry_recommendations(industry, usd_to_eur):
             info = t.info
             rating = info.get('recommendationMean')
             if rating and rating <= 2.2:
-                price = (info.get('currentPrice') or info.get('regularMarketPrice') or 0) * usd_to_eur
+                price = (info.get('currentPrice') or info.get('regularMarketPrice') or 0) * eur_val
                 div = (info.get('dividendYield', 0) or 0) * 100
                 sb_list.append({"Symbol": s, "Name": info.get('shortName', s), "Preis (€)": round(price, 2), "Rating": rating, "Dividende": round(div, 2)})
         except: continue
@@ -42,11 +42,14 @@ st.markdown("""
 <style>
     .main { background-color: #0e1117; color: white; }
     div[data-testid="stMetric"] { background-color: #000; border: 1px solid #333; padding: 15px; border-radius: 10px; }
+    
+    /* Nahtlose Favoriten-Pillen */
     div.stButton > button { background-color: #1e1e1e; color: white; border: 1px solid #444; }
     div[data-testid="column"]:nth-child(odd) .stButton > button { border-radius: 20px 0 0 20px !important; border-right: none !important; }
     div[data-testid="column"]:nth-child(even) .stButton > button { border-radius: 0 20px 20px 0 !important; color: #ef5350 !important; }
-    .sb-card { background-color: #1e1e1e; padding: 15px; border-radius: 12px; border-left: 5px solid #bb86fc; margin-bottom: 12px; }
-    .div-badge { background-color: #26a69a; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; }
+    
+    .sb-card { background-color: #1e1e1e; padding: 15px; border-radius: 12px; border-left: 5px solid #bb86fc; margin-bottom: 12px; border-right: 1px solid #333;}
+    .div-badge { background-color: #26a69a; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,6 +62,7 @@ if 'period' not in st.session_state: st.session_state.period = '1y'
 st.title("📈 StockIntelligence Pro")
 
 col_search, col_add, col_clear = st.columns([4, 0.5, 0.8])
+# Verknüpfung der Suche mit dem Session State
 search_input = col_search.text_input("Ticker suchen:", value=st.session_state.search_query, key="main_search").strip().upper()
 
 if col_add.button("⭐"):
@@ -72,103 +76,119 @@ if col_clear.button("🗑️ Alle"):
 
 # Favoriten Pillen
 if st.session_state.watchlist:
-    cols_wrap = st.columns(4)
-    for idx, symbol in enumerate(st.session_state.watchlist):
-        with cols_wrap[idx % 4]:
-            c1, c2 = st.columns([2, 0.6])
-            if c1.button(symbol, key=f"n_{symbol}", use_container_width=True):
-                st.session_state.search_query = symbol
-                st.rerun()
-            if c2.button("×", key=f"x_{symbol}", use_container_width=True):
-                st.session_state.watchlist.remove(symbol)
-                st.rerun()
+    for i in range(0, len(st.session_state.watchlist), 4):
+        row = st.session_state.watchlist[i:i+4]
+        cols = st.columns([2, 0.6, 2, 0.6, 2, 0.6, 2, 0.6])
+        for idx, symbol in enumerate(row):
+            with cols[idx*2]:
+                if st.button(symbol, key=f"n_{symbol}", use_container_width=True):
+                    st.session_state.search_query = symbol
+                    st.rerun()
+            with cols[idx*2 + 1]:
+                if st.button("×", key=f"x_{symbol}", use_container_width=True):
+                    st.session_state.watchlist.remove(symbol)
+                    st.rerun()
 
 st.write("---")
-mode = st.radio("Menü:", ["Analyse", "Prognosen", "Strong Buy", "Positionsrechner"], horizontal=True)
+mode = st.radio("Hauptmenü:", ["Analyse", "Prognosen", "Strong Buy", "Positionsrechner"], horizontal=True)
 eur_usd = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
 # --- 5. LOGIK ---
-if mode == "Analyse" and search_input:
+if mode == "Analyse" and st.session_state.search_query:
     try:
-        ticker = yf.Ticker(search_input)
-        # Immer 2 Jahre laden für SMA-Berechnung
+        current_symbol = st.session_state.search_query
+        ticker = yf.Ticker(current_symbol)
         df_full = ticker.history(period="2y")
         
         if not df_full.empty:
             info = ticker.info
-            st.subheader(f"{info.get('longName', search_input)}")
+            st.subheader(f"{info.get('longName', current_symbol)}")
             
-            # ZEITACHSEN BUTTONS
+            # --- ZEITACHSEN BUTTONS (Synchronisiert) ---
             t_cols = st.columns(5)
             periods = [("1T", "1d"), ("1W", "5d"), ("1M", "1mo"), ("6M", "6mo"), ("1J", "1y")]
             for i, (label, p) in enumerate(periods):
                 if t_cols[i].button(label, key=f"z_{p}", type="primary" if st.session_state.period == p else "secondary", use_container_width=True):
                     st.session_state.period = p
-                    st.session_state.search_query = search_input
                     st.rerun()
 
-            # SMA CHECKBOXEN (Default: False/Aus)
-            st.write("Indikatoren einblenden:")
+            # Kennzahlen
+            m1, m2, m3, m4, m5 = st.columns(5)
+            curr_p = info.get('currentPrice') or df_full['Close'].iloc[-1]
+            m1.metric("Preis (€)", f"{curr_p * eur_usd:.2f} €")
+            
+            df_full['SMA50'] = df_full['Close'].rolling(50).mean()
+            df_full['SMA100'] = df_full['Close'].rolling(100).mean()
+            df_full['SMA200'] = df_full['Close'].rolling(200).mean()
+            df_full['RSI'] = calculate_rsi(df_full)
+            
+            m2.metric("RSI (14)", f"{df_full['RSI'].iloc[-1]:.1f}")
+            m3.metric("KGV", f"{info.get('forwardPE', 'N/A')}")
+            m4.metric("Dividende", f"{(info.get('dividendYield', 0) or 0)*100:.2f} %")
+            
+            rating = info.get('recommendationMean', 3.0)
+            rec_text = "👍 Strong Buy" if rating <= 2.1 else "✅ Buy" if rating <= 2.6 else "➡️ Hold"
+            m5.metric("Rating", rec_text)
+
+            # --- SMA CHECKBOXEN (Unterhalb der Metriken) ---
+            st.write("---")
             sc1, sc2, sc3 = st.columns(3)
             show_50 = sc1.checkbox("SMA 50 (Blau)", value=False)
             show_100 = sc2.checkbox("SMA 100 (Gelb)", value=False)
             show_200 = sc3.checkbox("SMA 200 (Rot)", value=False)
 
-            # Datenaufbereitung
-            df_full['SMA50'] = df_full['Close'].rolling(50).mean()
-            df_full['SMA100'] = df_full['Close'].rolling(100).mean()
-            df_full['SMA200'] = df_full['Close'].rolling(200).mean()
-            df_full['RSI'] = calculate_rsi(df_full)
-
+            # Chart Ausschnitt
             days_map = {"1d": 2, "5d": 7, "1mo": 30, "6mo": 180, "1y": 365}
             plot_df = df_full.tail(days_map.get(st.session_state.period, 365))
 
-            # Metriken
-            m1, m2, m3, m4, m5 = st.columns(5)
-            curr_p = info.get('currentPrice') or df_full['Close'].iloc[-1]
-            m1.metric("Preis (€)", f"{curr_p * eur_usd:.2f} €")
-            m2.metric("RSI (14)", f"{df_full['RSI'].iloc[-1]:.1f}")
-            m3.metric("KGV", f"{info.get('forwardPE', 'N/A')}")
-            m4.metric("Dividende", f"{(info.get('dividendYield', 0) or 0)*100:.2f} %")
-            rating = info.get('recommendationMean', 3.0)
-            m5.metric("Rating", "👍 Strong Buy" if rating <= 2.0 else "✅ Buy" if rating <= 2.5 else "➡️ Hold")
-
-            # Chart
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
             fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Kurs"), row=1, col=1)
             
-            if show_50: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA50'], name="SMA 50", line=dict(color='#00d1ff')), row=1, col=1)
-            if show_100: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA100'], name="SMA 100", line=dict(color='#ffea00')), row=1, col=1)
-            if show_200: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA200'], name="SMA 200", line=dict(color='#ff4b4b')), row=1, col=1)
+            if show_50: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA50'], name="SMA 50", line=dict(color='#00d1ff', width=1.5)), row=1, col=1)
+            if show_100: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA100'], name="SMA 100", line=dict(color='#ffea00', width=1.5)), row=1, col=1)
+            if show_200: fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA200'], name="SMA 200", line=dict(color='#ff4b4b', width=1.5)), row=1, col=1)
             
             fig.add_trace(go.Bar(x=plot_df.index, y=plot_df['Volume'], name="Volumen", marker_color='#333'), row=2, col=1)
-            fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
+            fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False, margin=dict(t=0,b=0,l=0,r=0))
             st.plotly_chart(fig, use_container_width=True)
-    except:
-        st.error("Daten konnten nicht geladen werden.")
+            
+    except Exception as e:
+        st.error(f"Fehler: {e}. Bitte Ticker prüfen.")
 
 elif mode == "Strong Buy":
     st.subheader("🔥 Top 10 Sektor-Favoriten")
-    selected_industry = st.radio("Branche:", ["Verteidigung/Militär", "Lebensmittel", "Energie", "Pharma"], horizontal=True)
-    with st.spinner("Scanne Markt..."):
+    selected_industry = st.radio("Sektor wählen:", ["Verteidigung/Militär", "Lebensmittel", "Energie", "Pharma"], horizontal=True)
+    with st.spinner("Scanne Analysten-Ratings..."):
         df_sb = get_industry_recommendations(selected_industry, eur_usd)
         if not df_sb.empty:
             c1, c2 = st.columns(2)
             for idx, row in df_sb.iterrows():
-                with (c1 if idx < 5 else c2):
-                    st.markdown(f"""<div class="sb-card"><b>{row['Symbol']}</b> - {row['Preis (€)']} € <span class="div-badge">{row['Dividende']}% Div.</span><br><small>{row['Name']}</small></div>""", unsafe_allow_html=True)
+                with (c1 if idx < (len(df_sb)/2) else c2):
+                    st.markdown(f"""
+                    <div class="sb-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <b style="color:#bb86fc; font-size:1.1em;">{row['Symbol']}</b>
+                            <span style="font-weight:bold;">{row['Preis (€)']} €</span>
+                        </div>
+                        <div style="margin: 5px 0;">{row['Name']}</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#00ff00; font-size:0.85em;">Rating: {row['Rating']}</span>
+                            <span class="div-badge">💎 {row['Dividende']}%</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
         else: st.warning("Keine Treffer.")
 
 elif mode == "Prognosen":
-    st.subheader(f"Ziele für {search_input}")
-    info = yf.Ticker(search_input).info
+    st.subheader(f"Kursziel für {st.session_state.search_query}")
+    info = yf.Ticker(st.session_state.search_query).info
     target = info.get('targetMeanPrice', 0)
-    if target > 0: st.success(f"Kursziel: {target * eur_usd:.2f} €")
-    else: st.info("Keine Daten.")
+    if target > 0: st.success(f"Durschnittliches Ziel: {target * eur_usd:.2f} €")
+    else: st.info("Keine Daten verfügbar.")
 
 elif mode == "Positionsrechner":
     st.subheader("🧮 Risiko-Planer")
     entry = st.number_input("Einstieg €", value=100.0)
     stop = st.number_input("Stop €", value=95.0)
     risk = st.number_input("Risiko €", value=50.0)
-    if entry > stop: st.info(f"Stückzahl: {int(risk/(entry-stop))}")
+    if entry > stop: st.info(f"Kaufmenge: {int(risk/(entry-stop))} Stück")
