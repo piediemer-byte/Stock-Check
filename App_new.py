@@ -1,135 +1,140 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
-# --- 1. ERWEITERTE KI-LOGIK (NEWS, PROGNOSEN, VOLUMEN, BILANZ) ---
-def get_advanced_ki_analysis(ticker_obj, eur_val):
+# --- 1. KI-ENGINE (SMART ANALYST) ---
+def get_ki_verdict(ticker_obj, eur_val):
     inf = ticker_obj.info
-    hist_1m = ticker_obj.history(period="1mo")
-    if hist_1m.empty: return "➡️", 50, "Keine Daten verfügbar"
+    hist = ticker_obj.history(period="1y") # 1 Jahr für stabilere SMA-Berechnung
+    if hist.empty: return "➡️ Neutral", "Keine Daten", 0
     
-    # --- A. BILANZ (25%) ---
+    curr_p = hist['Close'].iloc[-1]
+    prev_p = hist['Close'].iloc[-2]
+    sma50 = hist['Close'].rolling(50).mean()
+    sma200 = hist['Close'].rolling(200).mean()
+    
+    curr_sma50 = sma50.iloc[-1]
+    curr_sma200 = sma200.iloc[-1]
+    
+    # Fundamentaldaten
+    kgv = inf.get('forwardPE', 0)
+    bgv = inf.get('bookValue', 0)
+    kbv = curr_p / bgv if bgv and bgv > 0 else 0
     marge = inf.get('operatingMargins', 0)
-    score_bilanz = 15 if marge > 0.15 else (-10 if marge < 0.05 else 0)
-    
-    # --- B. PROGNOSEN (25%) ---
-    curr_p = hist_1m['Close'].iloc[-1]
     target = inf.get('targetMedianPrice', curr_p)
-    upside = (target / curr_p) - 1 if curr_p != 0 else 0
-    score_prognose = 15 if upside > 0.10 else (-10 if upside < -0.05 else 5)
+    recommend = inf.get('recommendationKey', 'none').replace('_', ' ')
     
-    # --- C. VOLUMEN (25%) ---
-    avg_vol = hist_1m['Volume'].mean()
-    curr_vol = hist_1m['Volume'].iloc[-1]
-    score_vol = 15 if (curr_vol > avg_vol * 1.2 and hist_1m['Close'].iloc[-1] > hist_1m['Open'].iloc[-1]) else 0
+    score = 50
+    reasons = []
     
-    # --- D. NEWS SENTIMENT (25%) ---
-    news = ticker_obj.news
-    sentiment_score = 0
-    warnings = []
-    if news:
-        pos_w = ['buy', 'growth', 'upgraded', 'profit', 'beats', 'bull', 'stark', 'kauf']
-        neg_w = ['sell', 'risk', 'downsized', 'loss', 'misses', 'bear', 'warnung', 'sinkt']
-        for n in news[:5]:
-            n_title = n.get('title', "").lower()
-            if any(w in n_title for w in pos_w): sentiment_score += 5
-            if any(w in n_title for w in neg_w): 
-                sentiment_score -= 8
-                warnings.append(n.get('title'))
+    # 1. SMA BREAKOUT CHECK
+    if prev_p < curr_sma50 and curr_p > curr_sma50:
+        score += 20
+        reasons.append("⚡ SMA 50 BREAKOUT: Kurs hat den 50-Tage-Schnitt nach oben durchbrochen!")
+    elif curr_p > curr_sma200:
+        score += 10
+        reasons.append("📈 BULLISH: Kurs hält sich stabil über dem SMA 200.")
+    elif curr_p < curr_sma200:
+        score -= 15
+        reasons.append("📉 BEARISH: Kurs unter dem SMA 200 (Langzeittrend negativ).")
+        
+    # 2. BEWERTUNG (KGV/BGV)
+    if 0 < kgv < 18:
+        score += 10
+        reasons.append(f"💎 Bewertung: KGV ({kgv:.1f}) attraktiv für die Branche.")
+    if 0 < kbv < 1.2:
+        score += 10
+        reasons.append(f"🏢 Substanz: KBV ({kbv:.1f}) deutet auf Unterbewertung hin.")
+        
+    # 3. ANALYSTEN & NEWS
+    if "buy" in recommend:
+        score += 15
+        reasons.append(f"📊 Analysten-Rating: '{recommend.upper()}' Konsens.")
     
-    total_score = 50 + score_bilanz + score_prognose + score_vol + sentiment_score
-    total_score = max(0, min(100, total_score))
-    
-    trend = "⬆️" if total_score >= 65 else ("⬇️" if total_score <= 35 else "➡️")
-    
-    warn_text = f"⚠️ Achtung: {len(warnings)} negative Schlagzeile(n) gefunden!" if warnings else "✅ News-Sentiment stabil."
-    
-    details = (
-        f"**KI-Zusammensetzung (Score: {total_score}):**\n\n"
-        f"- **Bilanz:** {'Stark' if score_bilanz > 0 else 'Neutral/Schwach'}\n"
-        f"- **Analysten:** Ziel {target:.2f} (Upside: {upside*100:.1f}%)\n"
-        f"- **Volumen:** {'Kaufdruck' if score_vol > 0 else 'Normal'}\n"
-        f"- **News:** {warn_text}"
-    )
-    
-    return trend, total_score, details
+    upside = (target / curr_p - 1) * 100
+    if upside > 15:
+        score += 10
+        reasons.append(f"🎯 Kursziel: Potential von {upside:.1f}% bis zum Target.")
 
-# --- 2. APP SETUP ---
-st.set_page_config(page_title="KI-Stock-Intelligence", layout="wide")
-if 'period' not in st.session_state: st.session_state.period = '1y'
+    # Finales Urteil
+    if score >= 65: verdict = "🚀 STRONG BUY"
+    elif score <= 35: verdict = "🛑 SELL / AVOID"
+    else: verdict = "➡️ HOLD / WATCH"
+    
+    return verdict, "\n".join(reasons)
+
+# --- 2. UI SETUP ---
+st.set_page_config(page_title="StockAI Mobile", layout="centered")
 
 st.markdown("""
 <style>
-    .stMetric { background: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
-    .explanation-card { background: #0d1117; padding: 20px; border-radius: 10px; border-left: 4px solid #bb86fc; margin-top: 20px; }
-    .news-box { font-size: 0.85em; color: #8b949e; margin-bottom: 8px; padding: 5px; border-bottom: 1px solid #30363d; }
+    [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+    .stButton > button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; background-color: #3d5afe; color: white; }
+    .status-card { background: #161b22; padding: 15px; border-radius: 12px; border-left: 5px solid #00e676; margin-bottom: 20px; white-space: pre-wrap; font-size: 0.9em; }
+    .calc-box { background: #0d1117; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-top: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. DASHBOARD ---
-st.title("🛡️ StockIntelligence AI Pro")
-query = st.text_input("Ticker Symbol:", value="AAPL").upper()
-eur_usd_data = yf.Ticker("EURUSD=X").info
-eur_usd = 1 / eur_usd_data.get('regularMarketPrice', 1.09)
+# --- 3. APP LOGIK ---
+st.title("🛡️ StockAI Mobile")
+ticker_input = st.text_input("Ticker Symbol:", value="AAPL").upper()
+eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
+
+# Zeitachsen-Buttons
+if 'p' not in st.session_state: st.session_state.p = '1mo'
+c1, c2, c3 = st.columns(3)
+if c1.button("1 Tag"): st.session_state.p = '1d'
+if c2.button("1 Woche"): st.session_state.p = '5d'
+if c3.button("1 Monat"): st.session_state.p = '1mo'
 
 try:
-    ticker = yf.Ticker(query)
+    ticker = yf.Ticker(ticker_input)
     info = ticker.info
     
-    # Zeitachsen-Buttons FIX
-    p_cols = st.columns(5)
-    for i, (l, k) in enumerate([("1T", "1d"), ("1W", "5d"), ("1M", "1mo"), ("6M", "6mo"), ("1J", "1y")]):
-        if p_cols[i].button(l, key=f"btn_{k}", type="primary" if st.session_state.period == k else "secondary"):
-            st.session_state.period = k
-            st.rerun()
+    # Preis-Daten
+    hist_p = ticker.history(period=st.session_state.p)
+    if not hist_p.empty:
+        curr_usd = hist_p['Close'].iloc[-1]
+        curr_eur = curr_usd * eur_usd_rate
+        start_p = hist_p['Close'].iloc[0]
+        perf = ((curr_usd / start_p) - 1) * 100
+        
+        # --- KURS-DISPLAY ---
+        st.subheader("Kurs-Check")
+        m1, m2 = st.columns(2)
+        m1.metric("Euro", f"{curr_eur:.2f} €", f"{perf:.2f}%")
+        m2.metric("Dollar", f"{curr_usd:.2f} $")
+        
+        st.divider()
 
-    hist = ticker.history(period=st.session_state.period)
-    if not hist.empty:
-        # Euro-Umrechnung
-        hist_eur = hist.copy()
-        for c in ['Open', 'High', 'Low', 'Close']: hist_eur[c] *= eur_usd
+        # --- KI ANALYSE ---
+        verdict, reasons = get_ki_verdict(ticker, eur_usd_rate)
+        st.markdown(f"### KI-Rating: {verdict}")
+        st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # KI-Analyse
-        trend, score, ki_details = get_advanced_ki_analysis(ticker, eur_usd)
-        
-        # Metrics
-        m1, m2, m3, m4 = st.columns(4)
-        end_p = hist_eur['Close'].iloc[-1]
-        perf = ((end_p / hist_eur['Close'].iloc[0]) - 1) * 100
-        
-        with m1:
-            st.metric("Kurs (€)", f"{end_p:.2f} €", f"{perf:.2f} %")
-            st.caption(f"Original: {hist['Close'].iloc[-1]:.2f} {info.get('currency', 'USD')}")
-        m2.metric("KGV", info.get('forwardPE', 'N/A'))
-        m3.metric("Marge", f"{info.get('operatingMargins', 0)*100:.1f} %")
-        m4.metric("KI-Trend", trend, f"Score: {score}", help=ki_details)
+        # --- RISIKO & STÜCKZAHL RECHNER ---
+        st.subheader("🛡️ Order- & Risiko-Rechner")
+        with st.container():
+            st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
+            invest = st.number_input("Geplantes Investment (€)", value=1000.0, step=50.0)
+            risk_pct = st.slider("Max. akzeptierter Verlust (%)", 1, 15, 5)
+            
+            # Berechnungen
+            stücke = int(invest // curr_eur)
+            tatsächliches_invest = stücke * curr_eur
+            stop_loss_eur = curr_eur * (1 - (risk_pct / 100))
+            max_verlust = tatsächliches_invest * (risk_pct / 100)
+            
+            st.write(f"📊 **Kaufmenge: {stücke} Stück**")
+            st.write(f"💰 Effektives Invest: {tatsächliches_invest:.2f} €")
+            st.error(f"📍 **Stop-Loss setzen bei: {stop_loss_eur:.2f} €**")
+            st.info(f"📉 Risiko bei Auslösung: -{max_verlust:.2f} €")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        # Candlestick Chart
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
-        fig.add_trace(go.Candlestick(x=hist_eur.index, open=hist_eur['Open'], high=hist_eur['High'], low=hist_eur['Low'], close=hist_eur['Close'], name="Kurs (€)"), row=1, col=1)
-        
-        v_colors = ['#00ff00' if hist_eur['Close'][i] >= hist_eur['Open'][i] else '#ff4b4b' for i in range(len(hist_eur))]
-        fig.add_trace(go.Bar(x=hist_eur.index, y=hist_eur['Volume'], marker_color=v_colors, opacity=0.4, name="Volumen"), row=2, col=1)
-        
-        fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Hintergrund-Info & News
-        st.markdown("### 🔍 KI-Hintergrundanalyse")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"<div class='explanation-card'>{ki_details}</div>", unsafe_allow_html=True)
-        with c2:
-            st.write("**Letzte Schlagzeilen (Einfluss auf Trend):**")
-            news_list = ticker.news
-            if news_list:
-                for n in news_list[:4]:
-                    st.markdown(f"<div class='news-box'>• {n.get('title', 'Kein Titel')}</div>", unsafe_allow_html=True)
-            else:
-                st.info("Keine aktuellen News gefunden.")
+        st.divider()
+        st.write("**Fundamentale Kurz-Übersicht:**")
+        st.write(f"• KGV: {info.get('forwardPE', 'N/A')} | BGV: {info.get('bookValue', 'N/A')}")
+        st.write(f"• Marge: {info.get('operatingMargins', 0)*100:.1f}%")
 
 except Exception as e:
-    st.error(f"Fehler bei der Datenverarbeitung: {e}")
+    st.error(f"Fehler: {e}")
