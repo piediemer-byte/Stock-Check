@@ -233,7 +233,6 @@ try:
 
         st.markdown(f"### 10. Momentum-Oszillator (MACD) <span class='weight-badge'>+{weights['macd']}</span>", unsafe_allow_html=True)
         st.markdown(f"<p class='matrix-desc'>Der MACD bestätigt, ob der Trend aktuell an Kraft gewinnt oder verliert. Ein bullishes Crossover ist das 'Go' für Kurzfrist-Trader. Momentum-Gewicht: <b>{weights['macd']}</b>.</p>", unsafe_allow_html=True)
-        [attachment_0](attachment)
 
         st.markdown(f"### 11. Wachstum zum Preis (PEG Ratio) <span class='weight-badge'>+{weights['peg']}</span>", unsafe_allow_html=True)
         st.markdown(f"<p class='matrix-desc'>Das Price-Earnings-to-Growth Ratio verhindert das Bezahlen überhöhter Preise für Wachstum. Werte um 1.0 gelten als 'Fair Value Growth'. Fair-Growth-Bonus: <b>{weights['peg']}</b>.</p>", unsafe_allow_html=True)
