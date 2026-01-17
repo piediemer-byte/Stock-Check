@@ -34,28 +34,47 @@ def get_ki_verdict(ticker_obj):
     score = 50
     reasons = []
     
+    # 1. Trend (SMA)
     s50 = hist['Close'].rolling(50).mean().iloc[-1]
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
     if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Bullish (SMA 50 > 200).")
     elif curr_p < s200: score -= 15; reasons.append("📉 Trend: Bearish (unter SMA 200).")
 
+    # 2. Bilanz
     marge = inf.get('operatingMargins', 0)
     cash = inf.get('totalCash', 0)
     debt = inf.get('totalDebt', 0)
     if marge > 0.15: score += 10; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
     if cash > debt: score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
 
-    kgv = inf.get('forwardPE', 0)
-    if 0 < kgv < 18: score += 10; reasons.append(f"💎 KGV: Günstig bewertet ({kgv:.1f}).")
+    # 3. Bewertung (KGV oder KUV Fallback)
+    kgv = inf.get('forwardPE', -1)
+    kuv = inf.get('priceToSalesTrailing12Months', -1)
+    
+    if kgv > 0:
+        if kgv < 18:
+            score += 10
+            reasons.append(f"💎 Bewertung: Günstiges KGV ({kgv:.1f}).")
+    elif kuv > 0:
+        if kuv < 3: # Schwellenwert für attraktives KUV bei Growth-Stocks
+            score += 10
+            reasons.append(f"🚀 Bewertung: Kein Gewinn, aber attraktives KUV ({kuv:.1f}).")
+        else:
+            reasons.append(f"⚠️ Bewertung: Verlustzone & hohes KUV ({kuv:.1f}).")
+    else:
+        reasons.append("⚠️ Bewertung: Keine validen Kennzahlen (KGV/KUV).")
 
+    # 4. Volumen
     avg_vol = hist['Volume'].tail(20).mean()
     if hist['Volume'].iloc[-1] > avg_vol * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
 
+    # 5. News
     news_val = analyze_news_sentiment(ticker_obj.news)
     score += news_val
     if news_val > 2: reasons.append(f"📰 News: Aktuell sehr positiv (+{news_val}).")
     elif news_val < -2: reasons.append(f"📰 News: Aktuell belastet ({news_val}).")
 
+    # 6. Prognosen
     target = inf.get('targetMedianPrice', curr_p)
     upside = (target / curr_p - 1) * 100
     if upside > 15: score += 10; reasons.append(f"🎯 Prognose: +{upside:.1f}% Upside.")
@@ -67,7 +86,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI Clean", layout="centered")
+st.set_page_config(page_title="StockAI Growth-Logic", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .matrix-desc { font-size: 0.85em; color: #b0b0b0; margin-bottom: 10px; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -95,7 +114,6 @@ try:
         col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
-        # KI-Urteil ohne Tooltip
         verdict, reasons = get_ki_verdict(ticker)
         st.subheader(f"KI: {verdict}")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
@@ -130,22 +148,22 @@ try:
         st.subheader("🔍 Deep Dive: Vollständige KI-Matrix")
         
         st.markdown("### 1. Technische Indikatoren (Trend)")
-        st.markdown("<p class='matrix-desc'><b>SMA 50/200:</b> Bewertung des Kurses im Verhältnis zu den gleitenden Durchschnitten. SMA 200 dient als Trend-Demarkationslinie (+/- 15 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>SMA 50/200 Trend-Demarkationslinie (+/- 15 Pkt).</p>", unsafe_allow_html=True)
         
         st.markdown("### 2. Fundamentale Stärke (Bilanz)")
-        st.markdown("<p class='matrix-desc'><b>Marge & Liquidität:</b> Operative Marge > 15% zeigt Preismacht (+10 Pkt). Net-Cash (Barmittel > Schulden) bietet Sicherheit (+5 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Operative Marge > 15% (+10 Pkt) und Net-Cash (+5 Pkt).</p>", unsafe_allow_html=True)
         
-        st.markdown("### 3. Bewertung (KGV)")
-        st.markdown("<p class='matrix-desc'><b>Forward P/E:</b> Bewertung der Aktie basierend auf künftigen Gewinnen. Ein Wert unter 18 wird als fair bis günstig eingestuft (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Bewertung (KGV & KUV Fallback)")
+        st.markdown("<p class='matrix-desc'><b>Forward P/E:</b> Ein positives KGV unter 18 gibt +10 Punkte.<br><b>KUV-Logik für Growth:</b> Hat ein Unternehmen einen negativen Gewinn (kein KGV), prüft die KI das Kurs-Umsatz-Verhältnis (KUV). Ein KUV unter 3 wird als attraktiv für Wachstumsaktien gewertet und erhält ebenfalls +10 Punkte. Damit werden auch rentable Zukunftsaktien in der Verlustzone fair bewertet.</p>", unsafe_allow_html=True)
         
         st.markdown("### 4. Markt-Dynamik (Volumen)")
-        st.markdown("<p class='matrix-desc'><b>Relative Volume:</b> Ein Volumen von >130% des 20-Tage-Schnitts deutet auf signifikantes Kaufinteresse hin (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Volumen >130% des 20-Tage-Schnitts (+10 Pkt).</p>", unsafe_allow_html=True)
         
         st.markdown("### 5. News-Sentiment (Zeit-Gewichtet)")
-        st.markdown("<p class='matrix-desc'><b>NLP-Analyse:</b> Nachrichten von heute zählen zu 100%. News zwischen 24h-72h zählen zu 50%. Dies sichert Aktualität (+10 Pkt max).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Nachrichten der letzten 24h zählen voll (NLP-Analyse, +10 Pkt max).</p>", unsafe_allow_html=True)
         
         st.markdown("### 6. Analysten-Konsens (Prognosen)")
-        st.markdown("<p class='matrix-desc'><b>Median Target:</b> Kursziel-Aggregation der Wall-Street. Ein Upside-Potenzial von mehr als 15% liefert Pluspunkte (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Upside-Potenzial von >15% basierend auf Analysten-Zielen (+10 Pkt).</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
