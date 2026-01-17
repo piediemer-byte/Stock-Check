@@ -29,33 +29,27 @@ def get_ki_verdict(ticker_obj):
     score = 50
     reasons = []
     
-    # 1. Trend (SMA)
     s50 = hist['Close'].rolling(50).mean().iloc[-1]
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
     if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Bullish (SMA 50 > 200).")
     elif curr_p < s200: score -= 15; reasons.append("📉 Trend: Bearish (unter SMA 200).")
 
-    # 2. Bilanz
     marge = inf.get('operatingMargins', 0)
     cash = inf.get('totalCash', 0)
     debt = inf.get('totalDebt', 0)
     if marge > 0.15: score += 10; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
     if cash > debt: score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
 
-    # 3. KGV
     kgv = inf.get('forwardPE', 0)
     if 0 < kgv < 18: score += 10; reasons.append(f"💎 KGV: Günstig bewertet ({kgv:.1f}).")
 
-    # 4. Volumen
     avg_vol = hist['Volume'].tail(20).mean()
     if hist['Volume'].iloc[-1] > avg_vol * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
 
-    # 5. News
     news_score = analyze_news_sentiment(ticker_obj.news)
     score += news_score
     if news_score > 0: reasons.append("📰 News: Positives Sentiment.")
 
-    # 6. Prognosen
     target = inf.get('targetMedianPrice', curr_p)
     upside = (target / curr_p - 1) * 100
     if upside > 15: score += 10; reasons.append(f"🎯 Prognose: +{upside:.1f}% Upside.")
@@ -65,7 +59,7 @@ def get_ki_verdict(ticker_obj):
 
 # --- 3. UI SETUP ---
 st.set_page_config(page_title="StockAI DeepLogic", layout="centered")
-st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .edu-text { font-size: 0.85em; line-height: 1.5; color: #cfd8dc; }</style>", unsafe_allow_html=True)
+st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
 st.title("🛡️ StockAI Intelligence")
@@ -93,21 +87,11 @@ try:
         col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
         verdict, reasons = get_ki_verdict(ticker)
-        
-        # --- AUSFÜHRLICHER TOOLTIP ---
-        ki_help = """
-        Detaillierte Punktevergabe:
-        1. TREND (15 Pkt): SMA 50 über SMA 200 zeigt ein 'Golden Cross'. Unter SMA 200 herrscht Abwärtsdruck.
-        2. BILANZ (15 Pkt): Eine Marge >15% zeigt Preismacht. Net-Cash (Cash > Schulden) schützt vor Zinsrisiken.
-        3. KGV (10 Pkt): Ein KGV unter 18 deutet auf eine faire bis günstige Bewertung im historischen Vergleich hin.
-        4. VOLUMEN (10 Pkt): Volumen >30% über Schnitt bestätigt, dass Institutionen kaufen.
-        5. NEWS (10 Pkt): Scan von Schlagzeilen auf bullische Keywords der letzten 24-48h.
-        6. PROGNOSE (10 Pkt): Aggregiertes Analystenziel. Fokus auf 'Upside' zum aktuellen Kurs.
-        """
+        ki_help = "Trend (15), Bilanz (15), KGV (10), Volumen (10), News (10), Prognose (10)."
         st.subheader(f"KI: {verdict}", help=ki_help)
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # --- ORDER PLANER ---
+        # --- ERWEITERTER ORDER-PLANER ---
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -120,30 +104,33 @@ try:
             
             stücke = int(invest // curr_eur)
             eff_inv = stücke * curr_eur
+            sl_price = curr_eur * (1 - (risk_pct / 100))
+            tp_price = curr_eur * (1 + (target_pct / 100))
+            
             risk_eur = (eff_inv * (risk_pct/100)) + (2*fee)
             profit_eur = (eff_inv * (target_pct/100)) - (2*fee)
+            crv = profit_eur / risk_eur if risk_eur > 0 else 0
             
-            st.write(f"📊 **{stücke} Stück** | **Invest:** {eff_inv:.2f} €")
-            st.error(f"📍 SL: {curr_eur*(1-risk_pct/100):.2f} € (Risiko: -{risk_eur:.2f} €)")
-            st.success(f"🎯 TP: {curr_eur*(1+target_pct/100):.2f} € (Gewinn: +{profit_eur:.2f} €)")
+            st.write(f"📊 **{stücke} Stück** | **Effektives Investment:** {eff_inv:.2f} €")
+            st.error(f"📍 **Stop-Loss Preis:** {sl_price:.2f} €")
+            st.write(f"📉 Maximaler Verlust (inkl. Gebühren): -{risk_eur:.2f} €")
+            
+            st.success(f"🎯 **Take-Profit (Order Limit):** {tp_price:.2f} €")
+            st.write(f"📈 Potenzieller Netto-Gewinn: +{profit_eur:.2f} €")
+            
+            # --- DYNAMISCHE CRV BOX ---
+            if crv >= 2.0:
+                st.success(f"✅ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}** (Exzellent)")
+            elif crv >= 1.0:
+                st.warning(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}** (Akzeptabel)")
+            else:
+                st.error(f"⚠️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}** (Riskant)")
+            
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- NEUER BEREICH: TIEFEN-ERKLÄRUNG ---
         st.divider()
-        with st.expander("🔍 Deep Dive: Wie die KI entscheidet"):
-            st.markdown("""
-            <div class='edu-text'>
-            <b>1. Technische Analyse (SMA Trend):</b><br>
-            Der 200-Tage-Schnitt (SMA 200) ist die 'Demarkationslinie' zwischen Bullen- und Bärenmarkt. Die KI bewertet Kurse über dieser Linie als sichereres Umfeld. Ein Kreuzen des 50-Tage-Schnitts nach oben (Golden Cross) triggert die volle Punktzahl.<br><br>
-            [attachment_0](attachment)
-            <b>2. Fundamentaldaten (Bilanz & KGV):</b><br>
-            Wir schauen auf die <i>Operating Margin</i>. Unternehmen wie Apple oder Microsoft haben Margen weit über 20%, was sie krisenfest macht. Das KGV (Kurs-Gewinn-Verhältnis) wird 'forward-looking' betrachtet – also auf Basis der erwarteten Gewinne des nächsten Jahres.<br><br>
-            <b>3. Markt-Momentum (Volumen & News):</b><br>
-            Ein Kursanstieg ohne Volumen ist oft eine Falle. Die KI sucht nach 'Smart Money'-Spuren (hohes Volumen). Parallel scannt ein Sentiment-Algorithmus News auf Signalwörter.<br><br>
-            <b>4. Wall Street Konsens (Prognosen):</b><br>
-            Analystenziele sind keine Garantie, aber sie wirken als psychologische Marken. Ein Upside-Potential von >15% signalisiert, dass die Mehrheit der Experten die Aktie für unterbewertet hält.
-            </div>
-            """, unsafe_allow_html=True)
+        with st.expander("🔍 Deep Dive: KI-Entscheidung & Strategie"):
+            st.markdown("Detaillierte Analyse der 6 Faktoren für dieses Asset.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
