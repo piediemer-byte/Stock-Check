@@ -82,7 +82,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons), vola_ratio, trend_reversal_p
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="KI-Analyse Expert", layout="centered")
+st.set_page_config(page_title="KI-Analyse Deep Dive", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; } .matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -140,29 +140,36 @@ try:
             st.info(f"⚖️ **CRV: {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
+        # --- VOLLSTÄNDIGER STRATEGISCHER DEEP DIVE (ALLE 8 PUNKTE) ---
         st.divider()
-        st.subheader("🔍 Deep Dive: KI-Analyse-Strategie Protokoll")
+        st.subheader("🔍 Deep Dive: KI-Analyse Kriterien-Katalog")
         
-        st.markdown("### 1. Trend-Architektur (SMA 50/200)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Der SMA 200 (Gleitender Durchschnitt der letzten 200 Tage) dient als institutionelle Trennlinie. Ein Kurs darüber gilt als gesund. Befindet sich der Kurs zusätzlich über dem SMA 50, erkennt die KI-Analyse ein starkes Momentum. Der Trend-Umkehr-Punkt zeigt dir exakt die Marke, bei deren Unterschreitung die KI-Analyse auf 'Bearish' umschalten würde.</p>", unsafe_allow_html=True)
+        st.markdown("### 1. Langfristiger Trend (SMA 50/200)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±15 Punkte.</b> Der gleitende Durchschnitt der letzten 200 Tage (SMA 200) ist die Grenze zwischen Bullen- und Bärenmarkt. Die KI-Analyse vergibt Pluspunkte, wenn der Kurs darüber liegt und der SMA 50 zusätzlich ein 'Golden Cross' (Kreuzung nach oben) bildet.</p>", unsafe_allow_html=True)
         
 
         st.markdown("### 2. Relative Stärke (RSI 14)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Der RSI misst, ob eine Aktie im Vergleich zu ihrer eigenen Historie zu schnell gestiegen oder gefallen ist. Ein RSI > 70 deutet auf Überhitzung hin (-10 Pkt), während ein RSI < 30 auf eine massive Panik im Markt hindeutet, was oft ein Kaufsignal darstellt (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: ±10 Punkte.</b> Der RSI misst die Kauf-Dynamik. Ein RSI > 70 signalisiert eine Überhitzung (Gefahr von Rücksetzern), während ein RSI < 30 eine extreme Unterbewertung durch Panikverkäufe anzeigt.</p>", unsafe_allow_html=True)
         
 
-        st.markdown("### 3. Volatilitäts-Faktor (ATR-Ratio)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte bei Instabilität.</b> Über die Average True Range (ATR) berechnet die KI-Analyse das tägliche Grundrauschen. Beträgt die Vola mehr als 4% des Kurses, ist die Aktie hochspekulativ. Das System zieht Punkte ab, da hier das Risiko für plötzliche Stop-Loss-Ketten-Auslösungen steigt.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Volatilitäts-Check (ATR)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: -5 Punkte bei Gefahr.</b> Die 'Average True Range' misst das tägliche Rauschen. Eine Vola von über 4% deutet auf instabile Kurse hin, was oft zu unvorhersehbaren Ausbrüchen führt.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 4. Operative Qualität (Marge & Cash)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +15 Punkte (kombiniert).</b> Unternehmen mit einer operativen Marge > 15% beweisen Preismacht. Die KI-Analyse prüft zudem, ob mehr Cash als Schulden vorhanden sind (Net-Cash), was die Firma immun gegen Zinsänderungen der Zentralbanken macht.</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Operative Marge (Rentabilität)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Eine operative Marge > 15% zeigt, dass das Unternehmen profitabel arbeitet und genug Puffer für Investitionen oder Krisen hat.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 5. Multi-Bewertung (KGV & KUV)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Das System nutzt einen hybriden Ansatz: Bei Gewinnen wird ein KGV < 18 gesucht. Bei Wachstumsaktien ohne Gewinn wird automatisch auf das KUV gewechselt. Ein KUV < 3 bei gleichzeitigem Umsatzwachstum wird als Unterbewertung eingestuft.</p>", unsafe_allow_html=True)
+        st.markdown("### 5. Liquidität (Net-Cash Position)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +5 Punkte.</b> Wenn die Barmittel die Schulden übersteigen, ist das Unternehmen unabhängig von Kreditmärkten. Die KI-Analyse belohnt diese finanzielle Autonomie.</p>", unsafe_allow_html=True)
+
+        st.markdown("### 6. Bewertungs-Matrix (KGV & KUV)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Ein KGV < 18 gilt als günstig. Bei Wachstumsaktien ohne Gewinn wird auf das KUV gewechselt – ein Wert < 3 ist hier das Ziel für eine attraktive Bewertung.</p>", unsafe_allow_html=True)
         
 
-        st.markdown("### 6. Markterwartung (Sentiment & Upside)")
-        st.markdown("<p class='matrix-desc'><b>Gewichtung: +20 Punkte.</b> Hier fließen zwei Datenströme zusammen: Erstens das NLP-News-Sentiment, das aktuelle Nachrichten zeit-gewichtet bewertet. Zweitens das Analysten-Upside-Ziel. Liegt der institutionelle Konsens mehr als 15% über dem aktuellen Kurs, liefert dies die fundamentale Bestätigung.</p>", unsafe_allow_html=True)
+        st.markdown("### 7. Institutionelles Momentum (Volumen)")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +10 Punkte.</b> Ein Volumenanstieg von >30% über dem Schnitt zeigt, dass 'Smart Money' (Großinvestoren) Positionen aufbaut, was Trends oft nachhaltig bestätigt.</p>", unsafe_allow_html=True)
+
+        st.markdown("### 8. Analysten-Target & News-Sentiment")
+        st.markdown("<p class='matrix-desc'><b>Gewichtung: +20 Punkte (kombiniert).</b> Hier fließen NLP-analysierte News-Schlagzeilen und das Upside-Potenzial zum mittleren Kursziel der Analysten (>15%) als finale Bestätigung ein.</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
