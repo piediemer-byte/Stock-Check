@@ -9,23 +9,31 @@ def get_ticker_from_any(query):
     try:
         search = yf.Search(query, max_results=1)
         return search.quotes[0]['symbol'] if search.quotes else query.upper()
-    except: return query.upper()
+    except: 
+        return query.upper()
 
 def get_eur_usd_rate():
     try:
         hist = yf.Ticker("EURUSD=X").history(period="1d")
-        return 1 / float(hist['Close'].iloc[-1]) if not hist.empty else 0.92
-    except: return 0.92
+        if not hist.empty:
+            return 1 / float(hist['Close'].iloc[-1])
+        return 0.92 
+    except:
+        return 0.92
 
 def analyze_news_sentiment(news_list):
     if not news_list: return 0
-    score, now = 0, datetime.now(timezone.utc)
-    pos_w = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance']
-    neg_w = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem']
+    score = 0
+    now = datetime.now(timezone.utc)
+    pos_w = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch']
+    neg_w = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief']
+    
     for n in news_list[:5]:
         title = n.get('title', '').lower()
         pub_time = datetime.fromtimestamp(n.get('providerPublishTime', now.timestamp()), timezone.utc)
-        weight = 1.0 if (now - pub_time).total_seconds() / 3600 < 24 else 0.4
+        hours_old = (now - pub_time).total_seconds() / 3600
+        weight = 1.0 if hours_old < 24 else (0.5 if hours_old < 72 else 0.2)
+        
         if any(w in title for w in pos_w): score += (5 * weight)
         if any(w in title for w in neg_w): score -= (7 * weight)
     return round(score, 1)
@@ -35,58 +43,87 @@ def get_ki_verdict(ticker_obj):
     try:
         inf = ticker_obj.info
         hist = ticker_obj.history(period="1y")
-        if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten.", 0, 0, 50
+        
+        if len(hist) < 200: 
+            return "➡️ Neutral", "Zu wenig historische Daten.", 0, 0, 50
         
         curr_p = float(hist['Close'].iloc[-1])
-        score, reasons = 50, []
+        score = 50
+        reasons = []
         
         # 1. Trend (SMA 50/200)
-        s200, s50 = hist['Close'].rolling(200).mean().iloc[-1], hist['Close'].rolling(50).mean().iloc[-1]
-        if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Stark Bullish (Golden Cross/SMA 200).")
-        elif curr_p < s200: score -= 15; reasons.append("📉 Trend: Bearish (Unter SMA 200).")
+        s200 = hist['Close'].rolling(200).mean().iloc[-1]
+        s50 = hist['Close'].rolling(50).mean().iloc[-1]
+        trend_reversal_p = s200 
+        if curr_p > s50 > s200: 
+            score += 15
+            reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200).")
+        elif curr_p < s200: 
+            score -= 15
+            reasons.append(f"📉 Trend: Bearish (unter SMA 200).")
 
         # 2. RSI (14)
         delta = hist['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + (gain / loss).iloc[-1]))
-        if rsi > 70: score -= 10; reasons.append(f"🔥 RSI überhitzt ({rsi:.1f})")
-        elif rsi < 30: score += 10; reasons.append(f"🧊 RSI überverkauft ({rsi:.1f})")
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1]))
+        if rsi > 70: score -= 10; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}).")
+        elif rsi < 30: score += 10; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}).")
 
         # 3. Volatilität (ATR)
-        atr_val = (hist['High']-hist['Low']).rolling(14).mean().iloc[-1]
-        vola_ratio = (atr_val / curr_p) * 100
+        high_low = hist['High'] - hist['Low']
+        atr = high_low.rolling(14).mean().iloc[-1]
+        vola_ratio = (atr / curr_p) * 100
         if vola_ratio > 4: score -= 5; reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%)")
 
-        # 4. & 5. Bilanz
-        if inf.get('operatingMargins', 0) > 0.15: score += 10; reasons.append("💰 Bilanz: Hohe operative Marge.")
-        if (inf.get('totalCash', 0) or 0) > (inf.get('totalDebt', 0) or 0): score += 5; reasons.append("🏦 Bilanz: Net-Cash Position.")
-        
-        # 6. Bewertung
-        kgv = inf.get('forwardPE', 0)
-        kuv = inf.get('priceToSalesTrailing12Months', 0)
-        if 0 < (kgv or 0) < 18: score += 10; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f})")
-        elif (not kgv or kgv <= 0) and (0 < (kuv or 0) < 3): score += 10; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f})")
+        # 4. & 5. Bilanz & Liquidität
+        marge = inf.get('operatingMargins', 0)
+        if marge > 0.15: score += 10; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%).")
+        cash = inf.get('totalCash', 0) or 0
+        debt = inf.get('totalDebt', 0) or 0
+        if cash > debt: score += 5; reasons.append("🏦 Bilanz: Net-Cash vorhanden.")
+
+        # 6. Bewertung (KGV/KUV)
+        kgv = inf.get('forwardPE', -1)
+        kuv = inf.get('priceToSalesTrailing12Months', -1)
+        if kgv and 0 < kgv < 18: score += 10; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}).")
+        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += 10; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}).")
         
         # 7. Volumen & 8. News
-        if hist['Volume'].iloc[-1] > hist['Volume'].tail(20).mean() * 1.3: score += 10; reasons.append("📊 Volumen: Instituionelles Interesse.")
+        vol_avg = hist['Volume'].tail(20).mean()
+        if vol_avg > 0 and hist['Volume'].iloc[-1] > vol_avg * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
         score += analyze_news_sentiment(ticker_obj.news)
         
-        # 9. Sektor
-        if (curr_p / hist['Close'].iloc[0]) - 1 > 0.2: score += 10; reasons.append("🏆 Sektor: Outperformer.")
+        # 9. Sektor-Benchmark
+        sector = inf.get('sector', 'N/A')
+        start_p = float(hist['Close'].iloc[0])
+        if start_p > 0 and (curr_p / start_p) - 1 > 0.2: score += 10; reasons.append(f"🏆 Sektor: Top-Performer in {sector}.")
 
-        # 10. MACD
-        exp1, exp2 = hist['Close'].ewm(span=12).mean(), hist['Close'].ewm(span=26).mean()
+        # --- NEU: 10. MACD (Trend-Momentum) ---
+        exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
+        exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
         macd = exp1 - exp2
-        if macd.iloc[-1] > macd.ewm(span=9).mean().iloc[-1]: score += 5; reasons.append("🌊 MACD: Bullishes Momentum.")
+        signal = macd.ewm(span=9, adjust=False).mean()
+        if macd.iloc[-1] > signal.iloc[-1]:
+            score += 5
+            reasons.append("🌊 MACD: Bullishes Momentum (Crossover).")
 
-        # 11. PEG
+        # --- NEU: 11. PEG Ratio (Growth Valuation) ---
         peg = inf.get('pegRatio')
-        if peg and 0.5 < peg < 1.5: score += 5; reasons.append(f"⚖️ PEG: Fair Value Growth ({peg})")
+        if peg is not None and 0.5 < peg < 1.5:
+            score += 5
+            reasons.append(f"⚖️ PEG: Wachstum/Preis-Ratio optimal ({peg}).")
 
-        verdict = "💎 STRONG BUY" if score >= 80 else ("🚀 BUY" if score >= 60 else ("➡️ HOLD" if score >= 35 else "🛑 SELL"))
-        return verdict, "\n".join(reasons), vola_ratio, s200, score
-    except: return "⚠️ Error", "Analyse fehlgeschlagen", 0, 0, 50
+        if score >= 80: verdict = "💎 STRONG BUY"
+        elif score >= 60: verdict = "🚀 BUY"
+        elif score >= 35: verdict = "➡️ HOLD"
+        else: verdict = "🛑 SELL"
+        
+        return verdict, "\n".join(reasons), vola_ratio, trend_reversal_p, score
+
+    except Exception as e:
+        return "⚠️ Error", str(e), 0, 0, 50
 
 # --- 3. UI SETUP ---
 st.set_page_config(page_title="KI-Analyse Intelligence", layout="centered")
@@ -96,91 +133,112 @@ st.markdown("""
 .high-conviction { background: linear-gradient(90deg, #ffd700, #bf953f); color: #000; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 2px solid #fff; }
 .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }
 .reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; }
-.watchlist-card { background: #1c2128; border-radius: 8px; padding: 10px; border: 1px solid #444; margin-bottom: 5px; text-align: center; }
+.matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }
 .weight-badge { background: #3d5afe; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 4. APP ---
 st.title("🛡️ KI-Analyse Intelligence")
-query = st.text_input("Asset suchen (Ticker, Name, ISIN):", value="NVDA")
-ticker_sym = get_ticker_from_any(query)
-eur_usd = get_eur_usd_rate()
+search_query = st.text_input("Suche (Ticker):", value="NVDA")
+ticker_symbol = get_ticker_from_any(search_query)
+eur_usd_rate = get_eur_usd_rate()
+
+# Zeit-Buttons
+if 'days' not in st.session_state: st.session_state.days = 22
+c1, c2, c3 = st.columns(3)
+if c1.button("1T"): st.session_state.days = 2
+if c2.button("1W"): st.session_state.days = 6
+if c3.button("1M"): st.session_state.days = 22
 
 try:
-    ticker = yf.Ticker(ticker_sym)
-    inf = ticker.info
-    hist = ticker.history(period="3mo")
+    ticker = yf.Ticker(ticker_symbol)
+    hist_all = ticker.history(period="3mo")
     
-    if not hist.empty:
-        curr_p = hist['Close'].iloc[-1]
-        st.metric(f"{inf.get('longName', ticker_sym)}", f"{curr_p * eur_usd:.2f} €", f"{((curr_p/hist['Close'].iloc[0])-1)*100:.2f}%")
+    if not hist_all.empty:
+        recent = hist_all.tail(st.session_state.days)
+        curr_price = recent['Close'].iloc[-1]
+        curr_eur = curr_price * eur_usd_rate
+        perf = ((curr_price / recent['Close'].iloc[0]) - 1) * 100
         
-        verdict, reasons, vola, reversal_p, score = get_ki_verdict(ticker)
-        if score >= 90: st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION OPPORTUNITY: Elite-Rating erreicht!</div>", unsafe_allow_html=True)
+        st.caption(f"Asset: **{ticker.info.get('longName', ticker_symbol)}**")
+        col_m1, col_m2 = st.columns(2)
+        col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
+        col_m2.metric("Kurs ($)", f"{curr_price:.2f} $")
         
-        st.subheader(f"KI-Analyse: {verdict} (Score: {score})")
+        verdict, reasons, current_vola, reversal_p, main_score = get_ki_verdict(ticker)
+        
+        if main_score >= 90:
+            st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION OPPORTUNITY: Absolute Elite-Übereinstimmung!</div>", unsafe_allow_html=True)
+            
+        st.subheader(f"KI-Analyse: {verdict} (Score: {main_score})")
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr-Marke:</b> {reversal_p * eur_usd:.2f} €<br><small>Bei Unterschreiten bricht der langfristige SMA 200.</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr-Marke:</b> {reversal_p * eur_usd_rate:.2f} € ({reversal_p:.2f} $)<br><small>Unter diesem Wert ist der langfristige Trend gebrochen.</small></div>", unsafe_allow_html=True)
 
-        # Order Planer
-        with st.expander("🛡️ Order- & Profit-Planer (0.25% Präzision)", expanded=True):
+        # Order Planer (0.25% Schritte)
+        st.subheader("🛡️ Order- & Profit-Planer")
+        with st.container():
+            st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
             invest = st.number_input("Investment (€)", value=1000.0, step=100.0)
-            risk_pct = st.slider("Risiko-Toleranz (%)", 0.0, 50.0, 5.0, step=0.25)
-            target_pct = st.slider("Gewinn-Ziel (%)", 0.0, 100.0, 15.0, step=0.25)
-            st.info(f"Stop-Loss: {curr_p*eur_usd*(1-risk_pct/100):.2f} € | Ziel-Verkauf: {curr_p*eur_usd*(1+target_pct/100):.2f} €")
-
-        # Sektor Watchlist
-        st.divider()
-        st.subheader("🛰️ KI-Sektor-Radar")
-        sector_peers = {"Technology": ["MSFT", "AAPL", "AMD", "TSM"], "Financial Services": ["JPM", "V", "GS"], "Healthcare": ["LLY", "NVO"], "Consumer Cyclical": ["TSLA", "AMZN"]}
-        peers = sector_peers.get(inf.get('sector', 'Technology'), ["SPY", "QQQ"])
-        cols = st.columns(len(peers))
-        for i, p_sym in enumerate(peers):
-            p_tick = yf.Ticker(p_sym)
-            _, _, _, _, p_score = get_ki_verdict(p_tick)
-            cols[i].markdown(f"<div class='watchlist-card' style='border-top: 3px solid {'#4caf50' if p_score >= 65 else '#546e7a'}'>{p_sym}<br><small>Score: {p_score}</small></div>", unsafe_allow_html=True)
+            risk_pct = st.slider("Risiko (%)", 0.0, 50.0, 5.0, step=0.25)
+            target_pct = st.slider("Ziel (%)", 0.0, 100.0, 15.0, step=0.25)
+            
+            stücke = int(invest // curr_eur)
+            eff_inv = stücke * curr_eur
+            sl_price = curr_eur * (1 - (risk_pct / 100))
+            tp_price = curr_eur * (1 + (target_pct / 100))
+            risk_eur = (eff_inv * (risk_pct/100))
+            profit_eur = (eff_inv * (target_pct/100))
+            crv = profit_eur / risk_eur if risk_eur > 0 else 0
+            
+            st.write(f"📊 **{stücke} Stück** | **Invest:** {eff_inv:.2f} €")
+            st.error(f"📍 **Stop-Loss:** {sl_price:.2f} € (-{risk_eur:.2f} €)")
+            st.success(f"🎯 **Take-Profit:** {tp_price:.2f} € (+{profit_eur:.2f} €)")
+            st.info(f"⚖️ **CRV: {crv:.2f}**")
+            st.markdown("</div>", unsafe_allow_html=True)
 
         # --- MAXIMAL DETAILLIERTER STRATEGISCHER DEEP DIVE ---
         st.divider()
-        st.subheader("🔍 Strategischer Deep Dive: Kriterien & Gewichtung")
+        st.subheader("🔍 Deep Dive: KI-Analyse Kriterien-Katalog (11 Faktoren)")
         
         st.markdown("### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>±15</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** Ist $Price > SMA_{50} > SMA_{200}$?  \n> **Beschreibung:** Dies ist der stärkste Trendfilter. Ein Golden Cross zeigt an, dass institutionelles Kapital den Wert stützt. Ein Score-Abzug erfolgt sofort, wenn der Kurs unter den SMA 200 fällt, da dies ein Bärenmarkt-Signal ist.")
+        st.markdown("<p class='matrix-desc'>Prüfung der Position zum 200-Tage-Schnitt. Kurs > SMA 200 signalisiert institutionelle Akzeptanz. Ein Golden Cross (50er über 200er) gilt als massives technisches Kaufsignal.</p>", unsafe_allow_html=True)
         st.markdown("")
 
-        st.markdown("### 2. Dynamik-Check (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $30 < RSI < 70$ (Neutral), $RSI < 30$ (+10), $RSI > 70$ (-10).  \n> **Beschreibung:** Verhindert den Einstieg in überhitzte Märkte. Ein niedriger RSI in einem intakten Aufwärtstrend ist oft der perfekte 'Dip'-Einstieg.")
+        st.markdown("### 2. Dynamik (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der RSI misst die innere Stärke. RSI > 70 zeigt Überhitzung (Gefahr), RSI < 30 Panik (Chance).</p>", unsafe_allow_html=True)
         st.markdown("")
 
-        st.markdown("### 3. Volatilitäts-Rauschen (ATR) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $(ATR / Price) * 100 > 4\%$.  \n> **Beschreibung:** Hohe Volatilität erhöht die Wahrscheinlichkeit, dass Stop-Loss-Orders unglücklich ausgelöst werden. Die KI bestraft 'unruhige' Aktien.")
+        st.markdown("### 3. Volatilität (ATR) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Die ATR misst das 'Rauschen'. Beträgt die tägliche Schwankung mehr als 4% des Kurses, wird das Risiko für unberechenbare Kurssprünge als zu hoch eingestuft.</p>", unsafe_allow_html=True)
 
         st.markdown("### 4. Operative Effizienz (Marge) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $Operating Margin > 15\%$.  \n> **Beschreibung:** Misst die Preismacht. Unternehmen mit hohen Margen können Inflation an Kunden weitergeben und bleiben in Krisen profitabel.")
+        st.markdown("<p class='matrix-desc'>Operating Margin > 15% beweist Preismacht. Ein Kernfaktor für fundamentale Stabilität gegen Inflation.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 5. Liquiditäts-Stabilität (Net-Cash) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $Total Cash > Total Debt$.  \n> **Beschreibung:** Ein Sicherheitspuffer. Firmen ohne Schuldenlast sind immun gegen Zinserhöhungen der Zentralbanken.")
+        st.markdown("### 5. Krisenfestigkeit (Net-Cash) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Vergleich von Barreserven zu Schulden. Net-Cash-Positionen machen Firmen immun gegen hohe Zinsen.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 6. Bewertungs-Matrix (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $KGV < 18$ ODER ($KGV \le 0$ & $KUV < 3$).  \n> **Beschreibung:** Kombiniert Value- und Growth-Ansätze. Es wird geprüft, ob der Preis im Verhältnis zum Gewinn oder zum Umsatz (bei Wachstumsfirmen) gerechtfertigt ist.")
-        st.markdown("")
+        st.markdown("### 6. Bewertung (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Prüft KGV (< 18) oder KUV (< 3) für Wachstumswerte. Verhindert den Kauf von überteuerten Hype-Titeln.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 7. Volumen-Bestätigung <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $Vol_{heute} > Vol_{ø20d} * 1.3$.  \n> **Beschreibung:** Preisbewegungen ohne Volumen sind 'Fake'. Ein Ausbruch mit hohem Volumen zeigt, dass große Adressen (Smart Money) einsteigen.")
+        st.markdown("### 7. Smart-Money (Volumen) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Volumenanstieg > 30% über Schnitt zeigt, dass große Fonds Positionen aufbauen.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 8. Sentiment & News-NLP <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** Zeitgewichtete Analyse der letzten 5 Schlagzeilen.  \n> **Beschreibung:** Die KI scannt Schlagzeilen nach Schlüsselwörtern wie 'Beat', 'Upgrade' oder 'Risk'. Da News den Markt kurzfristig dominieren, ist dies der am stärksten gewichtete Faktor.")
+        st.markdown("### 8. Sentiment & Analysten <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>KI-Gewichtung von News-Headlines und Analysten-Kurszielen (>15% Upside) als fundamentale Bestätigung.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 9. Sektor-Outperformance <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $Performance_{Asset} > Performance_{Benchmark}$.  \n> **Beschreibung:** Sucht nach den 'Alpha'-Aktien. Wir wollen nur die Gewinner innerhalb eines Sektors halten, nicht die Nachzügler.")
+        st.markdown("### 9. Sektor-Benchmark <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Vergleicht die Performance mit dem Sektor. Nur Branchenführer erhalten diesen Bonus.</p>", unsafe_allow_html=True)
 
-        st.markdown("### 10. Momentum-Oszillator (MACD) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown("> **Bedingung:** $MACD_{Line} > Signal_{Line}$.  \n> **Beschreibung:** Bestätigt, dass der Trend aktuell an Fahrt gewinnt. Ein bullishes Crossover ist oft der finale Trigger für technische Trader.")
+        st.markdown("### 10. Momentum-Bestätigung (MACD) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der <b>MACD (Moving Average Convergence Divergence)</b> berechnet die Differenz zweier exponentieller Durchschnitte. Wenn die MACD-Linie die Signallinie von unten nach oben kreuzt, bestätigt dies ein bullishes Momentum und signalisiert, dass der Trend an Kraft gewinnt.</p>", unsafe_allow_html=True)
         st.markdown("[attachment_0](attachment)")
 
-        st.markdown("### 11. PEG-Ratio (Growth at Fair Price) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
-        st.markdown(f"> **Bedingung:** $0.5 < \\frac{{KGV}}{{Gewinnwachstum}} < 1.5$.  \n> **Beschreibung:** Das PEG-Ratio stellt sicher, dass man für Wachstum nicht zu viel bezahlt. Ein Wert um 1.0 bedeutet, dass die Aktie exakt so viel kostet, wie ihr Wachstum rechtfertigt.")
-        st.markdown("")
+        st.markdown("### 11. Wachstum zum Preis (PEG Ratio) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Das <b>PEG-Ratio (Price/Earnings-to-Growth)</b> setzt das KGV ins Verhältnis zum Gewinnwachstum. Ein Wert zwischen 0,5 und 1,5 gilt als 'Fair Value' für Wachstumsaktien. Es stellt sicher, dass man nicht nur eine Aktie mit niedrigem KGV kauft, sondern eine, deren Preis durch echtes Wachstum gerechtfertigt ist.</p>", unsafe_allow_html=True)
 
-except Exception as e: st.error(f"Fehler: {e}")
+    else:
+        st.error("Daten konnten nicht abgerufen werden.")
+
+except Exception as e:
+    st.error(f"Fehler: {e}")
