@@ -5,139 +5,146 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. KI-LOGIK MIT BILANZ-CHECK ---
-@st.cache_data(ttl=3600)
-def get_ai_sector_picks(industry, eur_val):
-    sectors = {
-        "Verteidigung/Militär": ["LMT", "RTX", "NOC", "GD", "RHM.DE", "HENS.DE", "BAESY", "LHX", "RKLB"],
-        "Lebensmittel": ["KO", "PEP", "PG", "NESN.SW", "MDLZ", "COST", "WMT", "TSN", "ADM"],
-        "Energie": ["XOM", "CVX", "SHEL", "BP", "TTE", "RWE.DE", "EON.DE", "NEE", "SLB"],
-        "Pharma": ["PFE", "JNJ", "ABBV", "LLY", "NVO", "MRK", "AZN", "GSK", "BAYN.DE"]
-    }
-    candidates = sectors.get(industry, [])
-    scored_list = []
-
-    for s in candidates:
-        try:
-            t = yf.Ticker(s)
-            info = t.info
-            hist = t.history(period="1mo")
-            if len(hist) < 10: continue
-
-            # --- FUNDAMENTAL-DATEN ---
-            debt_to_equity = info.get('debtToEquity', 100) # Verschuldung
-            margin = info.get('profitMargins', 0) # Marge
-            pe_ratio = info.get('forwardPE', 20) # KGV
-            price = (info.get('currentPrice') or info.get('regularMarketPrice', 0))
-            target = info.get('targetMedianPrice', price)
-            upside = ((target / price) - 1) * 100 if price > 0 else 0
-            rsi = calculate_rsi(hist).iloc[-1]
-            
-            # --- KI-SCORING LOGIK ---
-            score = 10 
-            score += (upside / 4) # Bonus für Kurspotential
-            score += (margin * 20) # Bonus für hohe Profitabilität
-            if debt_to_equity > 150: score -= 5 # Abzug für hohe Schulden
-            if pe_ratio > 40: score -= 4 # Abzug für hohe Bewertung
-            if rsi > 70: score -= 6 # Abzug für Überkauft
-            if rsi < 35: score += 3 # Bonus für Kaufsignal
-
-            scored_list.append({
-                "Symbol": s,
-                "Name": info.get('shortName', s),
-                "Preis (€)": round(price * eur_val, 2),
-                "Upside": round(upside, 1),
-                "Score": round(score, 1),
-                "Verschuldung": debt_to_equity,
-                "Marge": round(margin * 100, 1),
-                "KGV": round(pe_ratio, 1),
-                "Div": round((info.get('dividendYield', 0) or 0) * 100, 2)
-            })
-        except: continue
-    
-    return pd.DataFrame(scored_list).sort_values(by="Score", ascending=False).head(8)
-
+# --- 1. KI-FUNKTIONEN (LIVE-SCAN MIT KGV-FILTER) ---
 def calculate_rsi(data, window=14):
+    if len(data) < window + 1: return pd.Series([50]*len(data))
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
     rs = gain / (loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
-# --- 2. STYLING ---
-st.set_page_config(page_title="StockIntelligence AI Fundamental", layout="wide")
+@st.cache_data(ttl=3600)
+def live_ki_sector_scan(sector_key, eur_val):
+    sector_pool = {
+        "Tech/KI": ["NVDA", "MSFT", "GOOGL", "AMD", "ASML", "TSM", "AVGO", "PLTR", "ORCL"],
+        "Verteidigung": ["LMT", "RTX", "NOC", "GD", "RHM.DE", "HENS.DE", "BAESY", "LHX", "SAFR.PA"],
+        "Energie": ["XOM", "CVX", "SHEL", "BP", "TTE", "RWE.DE", "EON.DE", "NEE", "ENGI.PA"],
+        "Pharma": ["PFE", "JNJ", "ABBV", "LLY", "NVO", "MRK", "AZN", "GSK", "BAYN.DE"]
+    }
+    
+    candidates = sector_pool.get(sector_key, [])
+    results = []
+    
+    for s in candidates:
+        try:
+            t = yf.Ticker(s)
+            info = t.info
+            
+            # 1. Fundamentaler Check (KGV)
+            pe_ratio = info.get('forwardPE') or info.get('trailingPE')
+            if pe_ratio and pe_ratio > 45: continue # Zu teure Aktien aussortieren
+            
+            # 2. Analysten Check
+            rec = info.get('recommendationMean', 3.0)
+            if rec > 2.4: continue # Nur klare Kaufempfehlungen
+            
+            price = info.get('currentPrice') or info.get('regularMarketPrice', 0)
+            target = info.get('targetMedianPrice', price)
+            upside = ((target / price) - 1) * 100 if price > 0 else 0
+            
+            # 3. Technischer Check
+            hist = t.history(period="1mo")
+            rsi = calculate_rsi(hist).iloc[-1]
+            
+            results.append({
+                "Symbol": s,
+                "Name": info.get('shortName', s),
+                "Preis (€)": round(price * eur_val, 2),
+                "KGV": round(pe_ratio, 1) if pe_ratio else "N/A",
+                "Upside": round(upside, 1),
+                "RSI": round(rsi, 1),
+                "Rating": rec,
+                "Status": "🔥 Top Pick" if rec <= 1.8 and upside > 15 else "Kaufen"
+            })
+        except: continue
+    
+    return pd.DataFrame(results).sort_values(by="Rating")
+
+# --- 2. LAYOUT & STYLING ---
+st.set_page_config(page_title="KI Stock Intelligence Pro", layout="wide")
 st.markdown("""
 <style>
-    .main { background-color: #0e1117; color: white; }
-    div[data-testid="stMetric"] { background-color: #000 !important; border: 1px solid #333; padding: 15px; border-radius: 10px; }
-    .pick-card { background: #161b22; border: 1px solid #333; padding: 18px; border-radius: 12px; margin-bottom: 12px; }
-    .section-header { background: linear-gradient(90deg, #00d1ff, #bb86fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8em; font-weight: bold; margin-top: 30px; border-bottom: 1px solid #333; padding-bottom: 10px; }
-    .stat-label { font-size: 0.75em; color: #888; text-transform: uppercase; }
-    .stat-value { font-size: 0.9em; font-weight: bold; color: #eee; }
+    .main { background-color: #0e1117; }
+    .section-header { background: linear-gradient(90deg, #00d1ff, #bb86fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8em; font-weight: bold; margin: 25px 0 10px 0; border-bottom: 1px solid #333; }
+    .thumb-box { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #333; text-align: center; }
+    .news-card { background: #1c2128; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #bb86fc; font-size: 0.9em; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HEADER & ANALYSE ---
-if 'search_query' not in st.session_state: st.session_state.search_query = "MSFT"
-st.title("💎 StockIntelligence AI Fundamental")
-
-search_input = st.text_input("Aktie analysieren:", value=st.session_state.search_query).upper()
-if search_input != st.session_state.search_query:
-    st.session_state.search_query = search_input
-    st.rerun()
-
+# --- 3. DASHBOARD ---
+st.title("🛡️ KI Stock Intelligence: Expert Mode")
+search_query = st.text_input("Ticker analysieren:", value="AAPL").upper()
 eur_usd = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
 try:
-    ticker = yf.Ticker(st.session_state.search_query)
+    ticker = yf.Ticker(search_query)
     df = ticker.history(period="1y")
+    info = ticker.info
     curr_p_eur = df['Close'].iloc[-1] * eur_usd
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Preis (€)", f"{curr_p_eur:.2f} €")
-    m2.metric("KGV", f"{ticker.info.get('forwardPE', 'N/A')}")
-    m3.metric("Marge", f"{ticker.info.get('profitMargins', 0)*100:.1f} %")
 
-    # Chart
-    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-    fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(t=0,b=0,l=0,r=0))
+    # SIDEBAR TOOLS
+    st.sidebar.header("Chart Analyse")
+    show_rsi = st.sidebar.checkbox("RSI Oszillator", value=True)
+    show_sma50 = st.sidebar.checkbox("SMA 50 (Blau)")
+    show_sma200 = st.sidebar.checkbox("SMA 200 (Rot)")
+
+    # TOP LEISTE
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        st.subheader(f"{info.get('longName', search_query)}")
+        st.write(f"Sektor: {info.get('sector', 'N/A')} | Branche: {info.get('industry', 'N/A')}")
+    
+    with c2:
+        st.metric("Preis (€)", f"{curr_p_eur:.2f} €", f"{((df['Close'].iloc[-1]/df['Close'].iloc[-2])-1)*100:.2f}%")
+    
+    with c3:
+        rec_val = info.get('recommendationMean', 3.0)
+        if rec_val <= 2.2:
+            st.markdown("<div class='thumb-box'><h2 style='margin:0;'>👍</h2><span style='color:#00ff00'>KAUFEN</span></div>", unsafe_allow_html=True)
+        elif rec_val >= 3.2:
+            st.markdown("<div class='thumb-box'><h2 style='margin:0;'>👎</h2><span style='color:#ff4b4b'>MEIDEN</span></div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='thumb-box'><h2 style='margin:0;'>✊</h2><span style='color:orange'>HALTEN</span></div>", unsafe_allow_html=True)
+
+    # CHART
+    fig = make_subplots(rows=2 if show_rsi else 1, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3] if show_rsi else [1], vertical_spacing=0.05)
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Kurs"), row=1, col=1)
+    if show_sma50: fig.add_trace(go.Scatter(x=df.index, y=df['Close'].rolling(50).mean(), name="SMA 50", line=dict(color='#00d1ff')), row=1, col=1)
+    if show_sma200: fig.add_trace(go.Scatter(x=df.index, y=df['Close'].rolling(200).mean(), name="SMA 200", line=dict(color='#ff4b4b')), row=1, col=1)
+    if show_rsi:
+        fig.add_trace(go.Scatter(x=df.index, y=calculate_rsi(df), name="RSI", line=dict(color='#bb86fc')), row=2, col=1)
+        fig.add_hrect(y0=70, y1=100, fillcolor="red", opacity=0.1, row=2, col=1)
+        fig.add_hrect(y0=0, y1=30, fillcolor="green", opacity=0.1, row=2, col=1)
+    fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 4. POSITIONSRECHNER ---
-    st.markdown('<p class="section-header">🧮 Risiko-Kalkulation</p>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    entry = c1.number_input("Einstieg (€)", value=curr_p_eur)
-    stop = c2.number_input("Stop-Loss (€)", value=entry * 0.95)
-    risk = c3.number_input("Max. Risiko (€)", value=100.0)
-    if entry > stop:
-        st.info(f"👉 Kaufe **{int(risk/(entry-stop))} Aktien**")
+    # UNTERER BEREICH: PROGNOSEN & NEWS
+    st.markdown('<p class="section-header">🔍 Prognosen & Marktsentiment</p>', unsafe_allow_html=True)
+    cl, cr = st.columns(2)
+    with cl:
+        st.subheader("Kursziele & Risiko")
+        t_med = info.get('targetMedianPrice', 0) * eur_usd
+        st.write(f"Analysten-Ziel: **{t_med:.2f} €** (+{((t_med/curr_p_eur)-1)*100:.1f}%)")
+        risk = st.number_input("Dein Risiko (€)", value=100)
+        stop = st.number_input("Stop-Loss (€)", value=curr_p_eur * 0.90)
+        if curr_p_eur > stop:
+            st.info(f"Empfohlene Menge: **{int(risk/(curr_p_eur-stop))} Aktien**")
 
-    # --- 5. KI SEKTOR-PICKS (MIT BILANZ-LOGIK) ---
-    st.markdown('<p class="section-header">🤖 KI-Picks: Bilanz & Fundamental Check</p>', unsafe_allow_html=True)
-    sel_sector = st.radio("Sektor:", ["Verteidigung/Militär", "Lebensmittel", "Energie", "Pharma"], horizontal=True)
-    
-    with st.spinner("KI berechnet Bilanz-Scores..."):
-        picks = get_ai_sector_picks(sel_sector, eur_usd)
-        c_p1, c_p2 = st.columns(2)
-        for i, row in picks.iterrows():
-            with (c_p1 if i < 4 else c_p2):
-                st.markdown(f"""
-                <div class="pick-card">
-                    <div style="display:flex; justify-content:space-between;">
-                        <b style="color:#00d1ff;">{row['Symbol']}</b> <b>{row['Preis (€)']} €</b>
-                    </div>
-                    <div style="color:#888; font-size:0.8em; margin-bottom:10px;">{row['Name']}</div>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                        <div><div class="stat-label">Upside</div><div class="stat-value">+{row['Upside']}%</div></div>
-                        <div><div class="stat-label">KGV</div><div class="stat-value">{row['KGV']}</div></div>
-                        <div><div class="stat-label">Marge</div><div class="stat-value">{row['Marge']}%</div></div>
-                    </div>
-                    <div style="margin-top:10px; padding-top:10px; border-top:1px solid #222; display:flex; justify-content:space-between;">
-                        <span style="font-size:0.8em; color:#bb86fc;">KI-Score: {row['Score']}</span>
-                        <span style="font-size:0.8em; color:{'#ff4b4b' if row['Verschuldung'] > 150 else '#00ff00'}">Schulden: {row['Verschuldung']}%</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+    with cr:
+        st.subheader("Live Newsfeed")
+        for n in ticker.news[:4]:
+            st.markdown(f"<div class='news-card'><a href='{n['link']}' target='_blank' style='color:#00d1ff; text-decoration:none;'>{n['title']}</a></div>", unsafe_allow_html=True)
+
+    # KI SEKTOR-SCANNER
+    st.markdown('<p class="section-header">✨ KI-Sektor-Scouts (Live-Analyse)</p>', unsafe_allow_html=True)
+    sel_sector = st.radio("Sektor live filtern:", ["Tech/KI", "Verteidigung", "Energie", "Pharma"], horizontal=True)
+    with st.spinner("KI filtert nach Bewertung (KGV) und Empfehlungen..."):
+        scan = live_ki_sector_scan(sel_sector, eur_usd)
+        if not scan.empty:
+            st.dataframe(scan, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aktuell keine Aktien mit gutem KGV und Kauf-Rating in diesem Sektor gefunden.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
