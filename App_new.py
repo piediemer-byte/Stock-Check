@@ -201,41 +201,41 @@ try:
         st.divider()
         st.subheader("🔍 Strategischer Deep Dive: Die 11-Faktor-Matrix")
         
-        st.markdown(f"### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>±{weights['trend']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Prüfung der Preislage zum 200-Tage-Durchschnitt. Ein Kurs über dem SMA 200 gilt als 'bullish' und signalisiert langfristige Akzeptanz durch Großinvestoren. Deine Gewichtung von <b>{weights['trend']}</b> priorisiert diesen Trendfilter.</p>", unsafe_allow_html=True)
-        
+        st.markdown("### 1. Markt-Phasierung (SMA 50/200) <span class='weight-badge'>±15</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Prüfung der Position zum 200-Tage-Schnitt. Kurs > SMA 200 signalisiert institutionelle Akzeptanz. Ein Golden Cross (50er über 200er) gilt als massives technisches Kaufsignal.</p>", unsafe_allow_html=True)
+        st.markdown("")
 
-        st.markdown(f"### 2. Dynamik-Check (RSI 14) <span class='weight-badge'>±{weights['rsi']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Der Relative Strength Index misst die Geschwindigkeit von Preisbewegungen. Ein RSI unter 30 signalisiert eine massive Unterbewertung (Panik), während über 70 Gier anzeigt. Gewichtung: <b>{weights['rsi']}</b>.</p>", unsafe_allow_html=True)
-        
+        st.markdown("### 2. Dynamik (RSI 14) <span class='weight-badge'>±10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der RSI misst die innere Stärke. RSI > 70 zeigt Überhitzung (Gefahr), RSI < 30 Panik (Chance).</p>", unsafe_allow_html=True)
+        st.markdown("")
 
-        st.markdown(f"### 3. Volatilitäts-Rauschen (ATR) <span class='weight-badge'>-{weights['vola']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Die Average True Range bewertet die tägliche Schwankungsbreite. Liegt diese über 4 %, steigt die Gefahr von Stop-Loss-Sprüngen. Dein Schutzfaktor: <b>-{weights['vola']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Volatilität (ATR) <span class='weight-badge'>-5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Die ATR misst das 'Rauschen'. Beträgt die tägliche Schwankung mehr als 4% des Kurses, wird das Risiko für unberechenbare Kurssprünge als zu hoch eingestuft.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 4. Operative Effizienz (Marge) <span class='weight-badge'>+{weights['marge']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Unternehmen mit einer operativen Marge von über 15 % besitzen Preismacht und einen Wettbewerbsvorteil (Moat). Fundamental-Bonus: <b>{weights['marge']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Operative Effizienz (Marge) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Operating Margin > 15% beweist Preismacht. Ein Kernfaktor für fundamentale Stabilität gegen Inflation.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 5. Liquiditäts-Sicherheit (Net-Cash) <span class='weight-badge'>+{weights['cash']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Ein positiver Net-Cash-Bestand schützt das Unternehmen in Hochzinsphasen vor Refinanzierungsrisiken. Krisen-Bonus: <b>{weights['cash']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 5. Krisenfestigkeit (Net-Cash) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Vergleich von Barreserven zu Schulden. Net-Cash-Positionen machen Firmen immun gegen hohe Zinsen.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 6. Bewertungs-Anker (KGV) <span class='weight-badge'>+{weights['val']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Das Kurs-Gewinn-Verhältnis (Forward) wird gegen den historischen Schnitt von 18 geprüft. Günstige Bewertungen mindern das Fallhöhen-Risiko. Value-Gewicht: <b>{weights['val']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 6. Bewertung (KGV/KUV) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Prüft KGV (< 18) oder KUV (< 3) für Wachstumswerte. Verhindert den Kauf von überteuerten Hype-Titeln.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 7. Smart-Money Flow (Volumen) <span class='weight-badge'>+{weights['vol']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Erhöhtes Volumen (>130 % des Schnitts) bestätigt die Relevanz einer Kursbewegung. Es zeigt an, dass institutionelles Kapital (Smart Money) aktiv wird. Relevanz: <b>{weights['vol']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 7. Smart-Money (Volumen) <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Volumenanstieg > 30% über Schnitt zeigt, dass große Fonds Positionen aufbauen.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 8. Banken-Kursziele & News-NLP <span class='weight-badge'>±{weights['news']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'><b>Echtzeit-Validierung:</b> Das System vergleicht den Kurs tagesaktuell mit den Kurszielen großer Investmentbanken (Goldman Sachs, Morgan Stanley etc.). Ein Upside-Potential von >15 % triggert einen massiven Vertrauensbonus. Deine Strategie gewichtet diese Profi-Meinungen mit <b>{weights['news']}</b>.</p>", unsafe_allow_html=True)
-        
+        st.markdown("### 8. Sentiment & Analysten <span class='weight-badge'>±20</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>KI-Gewichtung von News-Headlines und Analysten-Kurszielen (>15% Upside) als fundamentale Bestätigung.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 9. Sektor-Outperformance <span class='weight-badge'>+{weights['sector']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Relative Stärke zum Gesamtmarkt. Wir suchen die Leader-Aktien, die ihren Sektor anführen und nicht nur mitlaufen. Leader-Bonus: <b>{weights['sector']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 9. Sektor-Benchmark <span class='weight-badge'>+10</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Vergleicht die Performance mit dem Sektor. Nur Branchenführer erhalten diesen Bonus.</p>", unsafe_allow_html=True)
 
-        st.markdown(f"### 10. Momentum-Oszillator (MACD) <span class='weight-badge'>+{weights['macd']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Der MACD bestätigt, ob der Trend aktuell an Kraft gewinnt oder verliert. Ein bullishes Crossover ist das 'Go' für Kurzfrist-Trader. Momentum-Gewicht: <b>{weights['macd']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 10. Momentum-Bestätigung (MACD) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Der <b>MACD (Moving Average Convergence Divergence)</b> berechnet die Differenz zweier exponentieller Durchschnitte. Wenn die MACD-Linie die Signallinie von unten nach oben kreuzt, bestätigt dies ein bullishes Momentum und signalisiert, dass der Trend an Kraft gewinnt.</p>", unsafe_allow_html=True)
+        st.markdown("[attachment_0](attachment)")
 
-        st.markdown(f"### 11. Wachstum zum Preis (PEG Ratio) <span class='weight-badge'>+{weights['peg']}</span>", unsafe_allow_html=True)
-        st.markdown(f"<p class='matrix-desc'>Das Price-Earnings-to-Growth Ratio verhindert das Bezahlen überhöhter Preise für Wachstum. Werte um 1.0 gelten als 'Fair Value Growth'. Fair-Growth-Bonus: <b>{weights['peg']}</b>.</p>", unsafe_allow_html=True)
+        st.markdown("### 11. Wachstum zum Preis (PEG Ratio) <span class='weight-badge'>+5</span>", unsafe_allow_html=True)
+        st.markdown("<p class='matrix-desc'>Das <b>PEG-Ratio (Price/Earnings-to-Growth)</b> setzt das KGV ins Verhältnis zum Gewinnwachstum. Ein Wert zwischen 0,5 und 1,5 gilt als 'Fair Value' für Wachstumsaktien. Es stellt sicher, dass man nicht nur eine Aktie mit niedrigem KGV kauft, sondern eine, deren Preis durch echtes Wachstum gerechtfertigt ist.</p>", unsafe_allow_html=True)
 
     else:
         st.error("Daten konnten nicht abgerufen werden.")
