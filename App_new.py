@@ -29,7 +29,6 @@ def get_ki_verdict(ticker_obj):
     score = 50
     reasons = []
     
-    # Tooltip-Zusammenstellung (Punkte-Logik)
     s50 = hist['Close'].rolling(50).mean().iloc[-1]
     s200 = hist['Close'].rolling(200).mean().iloc[-1]
     if curr_p > s50 > s200: score += 15; reasons.append("📈 Trend: Bullish (SMA 50 > 200).")
@@ -59,7 +58,7 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI Analytics", layout="centered")
+st.set_page_config(page_title="StockAI Finance", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -68,7 +67,6 @@ search_query = st.text_input("Suche (Name, ISIN, Ticker):", value="Apple")
 ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
-# Trading Days Logik
 if 'days' not in st.session_state: st.session_state.days = 22
 c1, c2, c3 = st.columns(3)
 if c1.button("1T"): st.session_state.days = 2
@@ -88,38 +86,42 @@ try:
         col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
-        # --- KI-URTEIL MIT TOOLTIP ---
         verdict, reasons = get_ki_verdict(ticker)
-        
-        # Tooltip Inhalt
-        ki_help = """
-        **Zusammensetzung der KI-Bewertung:**
-        - **SMA Trend:** ±15 Pkt (Kurs vs. 50/200 Tage Linie)
-        - **Bilanz:** +15 Pkt (Marge > 15% & Cash-Reserve)
-        - **KGV:** +10 Pkt (Bewertung unter 18)
-        - **Volumen:** +10 Pkt (Handelsaktivität > 30% über Schnitt)
-        - **News:** ±10 Pkt (KI-Textanalyse der letzten 5 Meldungen)
-        - **Prognose:** +10 Pkt (Analysten-Kursziel > 15% Upside)
-        
-        *Score-Skala: >75 = Strong Buy | <35 = Sell*
-        """
+        ki_help = "**Punkte:** Trend (15), Bilanz (15), KGV (10), Volumen (10), News (10), Prognose (10). Skala: >75 Strong Buy."
         st.subheader(f"KI: {verdict}", help=ki_help)
         st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
         
-        # ORDER PLANER
+        # --- ERWEITERTER ORDER PLANER ---
         st.subheader("🛡️ Order- & Profit-Planer")
         with st.container():
             st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-            invest = st.number_input("Investment (€)", value=1000.0, step=100.0)
+            
+            c_inv, c_fee = st.columns(2)
+            invest = c_inv.number_input("Investment (€)", value=1000.0, step=100.0)
+            fee = c_fee.number_input("Gebühr pro Trade (€)", value=1.0, step=0.50)
+            
             risk_pct = st.slider("Risiko bis Stop-Loss (%)", 1.0, 20.0, 5.0)
             target_pct = st.slider("Take-Profit (%)", 1.0, 50.0, 15.0)
             
+            # Berechnungen inkl. Gebühren
             stücke = int(invest // curr_eur)
-            eff_inv = stücke * curr_eur
-            st.write(f"📊 **Kaufmenge:** {stücke} Stück | **Invest:** {eff_inv:.2f} €")
-            st.error(f"📍 **STOP-LOSS bei: {curr_eur*(1-risk_pct/100):.2f} €** (-{eff_inv*(risk_pct/100):.2f}€)")
-            st.success(f"🎯 **TAKE-PROFIT bei: {curr_eur*(1+target_pct/100):.2f} €** (+{eff_inv*(target_pct/100):.2f}€)")
-            st.info(f"⚖️ **CRV: {(target_pct/risk_pct):.2f}**")
+            reales_aktien_invest = stücke * curr_eur
+            total_buy_cost = reales_aktien_invest + fee
+            
+            sl_preis = curr_eur * (1 - (risk_pct / 100))
+            tp_preis = curr_eur * (1 + (target_pct / 100))
+            
+            # Netto-Rechnung (Verkaufsgebühr abgezogen)
+            risk_eur = (reales_aktien_invest * (risk_pct / 100)) + (2 * fee)
+            profit_eur = (reales_aktien_invest * (target_pct / 100)) - (2 * fee)
+            
+            st.divider()
+            st.write(f"📊 **Menge:** {stücke} Stück | **Gesamt-Einstieg:** {total_buy_cost:.2f} €")
+            st.error(f"📍 **STOP-LOSS bei: {sl_preis:.2f} €**")
+            st.write(f"📉 Effektives Risiko (inkl. Gebühren): -{risk_eur:.2f} €")
+            st.success(f"🎯 **TAKE-PROFIT bei: {tp_preis:.2f} €**")
+            st.write(f"📈 Netto-Gewinn (nach Gebühren): +{profit_eur:.2f} €")
+            st.info(f"⚖️ **Netto-CRV: {(profit_eur/risk_eur if risk_eur > 0 else 0):.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
