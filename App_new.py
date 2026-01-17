@@ -19,11 +19,11 @@ def analyze_news_sentiment(news_list):
         if any(w in title for w in neg_w): score -= 7
     return score
 
-# --- 2. 6-FAKTOR KI-ENGINE ---
+# --- 2. 6-FAKTOR KI-ENGINE (4-STUFEN) ---
 def get_ki_verdict(ticker_obj):
     inf = ticker_obj.info
     hist = ticker_obj.history(period="1y")
-    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten für 6-Faktor-Analyse."
+    if len(hist) < 200: return "➡️ Neutral", "Zu wenig Daten."
     
     curr_p = float(hist['Close'].iloc[-1])
     score = 50
@@ -60,11 +60,16 @@ def get_ki_verdict(ticker_obj):
     upside = (target / curr_p - 1) * 100
     if upside > 15: score += 10; reasons.append(f"🎯 Prognose: +{upside:.1f}% Upside.")
 
-    verdict = "🚀 STRONG BUY" if score >= 75 else ("🛑 SELL" if score <= 35 else "➡️ HOLD")
+    # --- 4-STUFEN LOGIK ---
+    if score >= 80: verdict = "💎 STRONG BUY"
+    elif score >= 60: verdict = "🚀 BUY"
+    elif score >= 35: verdict = "➡️ HOLD"
+    else: verdict = "🛑 SELL"
+    
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI DeepLogic", layout="centered")
+st.set_page_config(page_title="StockAI 4-Stage", layout="centered")
 st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
@@ -73,7 +78,6 @@ search_query = st.text_input("Suche (Name, ISIN, Ticker):", value="Apple")
 ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = 1 / yf.Ticker("EURUSD=X").info.get('regularMarketPrice', 1.09)
 
-# Trading Days Logik
 if 'days' not in st.session_state: st.session_state.days = 22
 c1, c2, c3 = st.columns(3)
 if c1.button("1T"): st.session_state.days = 2
@@ -93,25 +97,20 @@ try:
         col_m1.metric("Kurs (€)", f"{curr_eur:.2f} €", f"{perf:.2f}%")
         col_m2.metric("Kurs ($)", f"{recent['Close'].iloc[-1]:.2f} $")
         
-        # --- KI-URTEIL MIT AUSFÜHRLICHEM TOOLTIP ---
+        # --- KI-URTEIL MIT 4-STUFEN TOOLTIP ---
         verdict, reasons = get_ki_verdict(ticker)
         
         ki_tooltip = """
-        ### 🔍 Wie berechnet sich der Score?
-        Die KI startet bei 50 Punkten (Neutral). 
+        ### 🔍 4-Stufen Punkte-Matrix
         
-        **Faktor & Gewichtung:**
-        * **SMA Trend (±15 Pkt):** Kurs > 50-Tage-Schnitt > 200-Tage-Schnitt = Maximum. Kurs unter 200er Schnitt = Abzug.
-        * **Bilanzstärke (+15 Pkt):** Operative Marge > 15% (Preismacht) und Cash > Schulden (Stabilität).
-        * **KGV Bewertung (+10 Pkt):** KGV unter 18 signalisiert eine faire/günstige Bewertung.
-        * **Volumen-Momentum (+10 Pkt):** Aktuelles Handelsvolumen liegt 30% über dem 20-Tage-Schnitt.
-        * **Sentiment (+10 Pkt):** Scan der Schlagzeilen auf positive Schlüsselwörter.
-        * **Wall St. Prognose (+10 Pkt):** Durchschnittliches Kursziel liegt >15% über aktuellem Preis.
+        **Ergebnis-Stufen:**
+        - **80 - 100 Pkt:** 💎 **STRONG BUY** (Alle Faktoren optimal)
+        - **60 - 79 Pkt:** 🚀 **BUY** (Überwiegend positive Signale)
+        - **35 - 59 Pkt:** ➡️ **HOLD** (Neutrales Marktumfeld)
+        - **0 - 34 Pkt:** 🛑 **SELL** (Bearishe Signale dominieren)
         
-        **Ergebnis:**
-        - **>75 Pkt:** 🚀 STRONG BUY
-        - **35-74 Pkt:** ➡️ HOLD
-        - **<35 Pkt:** 🛑 SELL
+        **Gewichtung:**
+        * SMA Trend (15), Bilanzstärke (15), KGV (10), Volumen (10), Sentiment (10), Analysten-Upside (10).
         """
         
         st.subheader(f"KI: {verdict}", help=ki_tooltip)
@@ -137,21 +136,15 @@ try:
             profit_eur = (eff_inv * (target_pct/100)) - (2*fee)
             crv = profit_eur / risk_eur if risk_eur > 0 else 0
             
-            st.write(f"📊 **{stücke} Stück** | **Effektives Investment:** {eff_inv:.2f} €")
+            st.write(f"📊 **{stücke} Stück** | **Invest:** {eff_inv:.2f} €")
             st.error(f"📍 **Stop-Loss Preis:** {sl_price:.2f} €")
-            st.write(f"📉 Maximaler Verlust (inkl. Gebühren): -{risk_eur:.2f} €")
-            
+            st.write(f"📉 Risiko (inkl. Gebühren): -{risk_eur:.2f} €")
             st.success(f"🎯 **Take-Profit (Order Limit):** {tp_price:.2f} €")
-            st.write(f"📈 Potenzieller Netto-Gewinn: +{profit_eur:.2f} €")
+            st.write(f"📈 Netto-Gewinn: +{profit_eur:.2f} €")
             
-            # Dynamische CRV Box
-            if crv >= 2.0:
-                st.success(f"✅ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
-            elif crv >= 1.0:
-                st.warning(f"⚖️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
-            else:
-                st.error(f"⚠️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
-            
+            if crv >= 2.0: st.success(f"✅ **CRV: {crv:.2f}**")
+            elif crv >= 1.0: st.warning(f"⚖️ **CRV: {crv:.2f}**")
+            else: st.error(f"⚠️ **CRV: {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
