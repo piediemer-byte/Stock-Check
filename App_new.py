@@ -50,20 +50,11 @@ def get_ki_verdict(ticker_obj):
     # 3. Bewertung (KGV oder KUV Fallback)
     kgv = inf.get('forwardPE', -1)
     kuv = inf.get('priceToSalesTrailing12Months', -1)
-    
     if kgv > 0:
-        if kgv < 18:
-            score += 10
-            reasons.append(f"💎 Bewertung: Günstiges KGV ({kgv:.1f}).")
+        if kgv < 18: score += 10; reasons.append(f"💎 Bewertung: Günstiges KGV ({kgv:.1f}).")
     elif kuv > 0:
-        if kuv < 3: # Schwellenwert für attraktives KUV bei Growth-Stocks
-            score += 10
-            reasons.append(f"🚀 Bewertung: Kein Gewinn, aber attraktives KUV ({kuv:.1f}).")
-        else:
-            reasons.append(f"⚠️ Bewertung: Verlustzone & hohes KUV ({kuv:.1f}).")
-    else:
-        reasons.append("⚠️ Bewertung: Keine validen Kennzahlen (KGV/KUV).")
-
+        if kuv < 3: score += 10; reasons.append(f"🚀 Bewertung: Wachstums-KUV attraktiv ({kuv:.1f}).")
+    
     # 4. Volumen
     avg_vol = hist['Volume'].tail(20).mean()
     if hist['Volume'].iloc[-1] > avg_vol * 1.3: score += 10; reasons.append("📊 Volumen: Hohes Interesse.")
@@ -71,7 +62,7 @@ def get_ki_verdict(ticker_obj):
     # 5. News
     news_val = analyze_news_sentiment(ticker_obj.news)
     score += news_val
-    if news_val > 2: reasons.append(f"📰 News: Aktuell sehr positiv (+{news_val}).")
+    if news_val > 2: reasons.append(f"📰 News: Aktuell positiv (+{news_val}).")
     elif news_val < -2: reasons.append(f"📰 News: Aktuell belastet ({news_val}).")
 
     # 6. Prognosen
@@ -86,8 +77,8 @@ def get_ki_verdict(ticker_obj):
     return verdict, "\n".join(reasons)
 
 # --- 3. UI SETUP ---
-st.set_page_config(page_title="StockAI Growth-Logic", layout="centered")
-st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .matrix-desc { font-size: 0.85em; color: #b0b0b0; margin-bottom: 10px; }</style>", unsafe_allow_html=True)
+st.set_page_config(page_title="StockAI Expert", layout="centered")
+st.markdown("<style>.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.85em; white-space: pre-wrap; } .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; } .matrix-desc { font-size: 0.88em; color: #cfd8dc; line-height: 1.6; margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
 # --- 4. APP ---
 st.title("🛡️ StockAI Intelligence")
@@ -143,27 +134,29 @@ try:
             else: st.error(f"⚠️ **Chance-Risiko-Verhältnis (CRV): {crv:.2f}**")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- VOLLSTÄNDIGER DEEP DIVE ---
+        # --- DETAILLIERTER DEEP DIVE ---
         st.divider()
-        st.subheader("🔍 Deep Dive: Vollständige KI-Matrix")
+        st.subheader("🔍 Deep Dive: KI-Strategie Protokoll")
         
-        st.markdown("### 1. Technische Indikatoren (Trend)")
-        st.markdown("<p class='matrix-desc'>SMA 50/200 Trend-Demarkationslinie (+/- 15 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 1. Trend-Analyse (Gleitende Durchschnitte)")
+        st.markdown("<p class='matrix-desc'><b>Definition:</b> Vergleich des Preises mit dem Durchschnitt der letzten 50 (kurzfristig) und 200 (langfristig) Tage.<br><b>Logik:</b> Befindet sich der Kurs über dem SMA 200, herrscht ein bullischer Markt. Kreuzt der SMA 50 den SMA 200 nach oben (Golden Cross), vergibt die KI die volle Punktzahl (+15). Ein Kurs unter dem SMA 200 führt zu Punktabzug (-15), da das Risiko für weitere Abverkäufe statistisch erhöht ist.</p>", unsafe_allow_html=True)
         
-        st.markdown("### 2. Fundamentale Stärke (Bilanz)")
-        st.markdown("<p class='matrix-desc'>Operative Marge > 15% (+10 Pkt) und Net-Cash (+5 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 2. Bilanzqualität (Rentabilität & Sicherheit)")
+        st.markdown("<p class='matrix-desc'><b>Operative Marge:</b> Misst den Prozentsatz des Umsatzes, der nach Abzug der variablen Kosten übrig bleibt. Eine Marge > 15% zeigt 'Preismacht' (+10 Pkt).<br><b>Net-Cash Position:</b> Vergleich von Barmitteln (Total Cash) zu Gesamtschulden (Total Debt). Ein Unternehmen, das schuldenfrei agieren könnte, erhält +5 Punkte für finanzielle Krisenfestigkeit.</p>", unsafe_allow_html=True)
         
-        st.markdown("### 3. Bewertung (KGV & KUV Fallback)")
-        st.markdown("<p class='matrix-desc'><b>Forward P/E:</b> Ein positives KGV unter 18 gibt +10 Punkte.<br><b>KUV-Logik für Growth:</b> Hat ein Unternehmen einen negativen Gewinn (kein KGV), prüft die KI das Kurs-Umsatz-Verhältnis (KUV). Ein KUV unter 3 wird als attraktiv für Wachstumsaktien gewertet und erhält ebenfalls +10 Punkte. Damit werden auch rentable Zukunftsaktien in der Verlustzone fair bewertet.</p>", unsafe_allow_html=True)
+        st.markdown("### 3. Bewertungs-Matrix (Dual-Check)")
+        st.markdown("<p class='matrix-desc'><b>Forward KGV:</b> Das Kurs-Gewinn-Verhältnis basierend auf Analysten-Erwartungen. Werte < 18 signalisieren eine Unterbewertung (+10 Pkt).<br><b>KUV-Fallback (Growth):</b> Hat ein Unternehmen keinen Gewinn (KGV negativ), prüft die KI das Kurs-Umsatz-Verhältnis (KUV). Bei Wachstumsfirmen gilt ein KUV < 3 als gesund eingestuft (+10 Pkt). Dies verhindert, dass Zukunftsaktien nur wegen fehlender Gewinne abgestraft werden.</p>", unsafe_allow_html=True)
         
-        st.markdown("### 4. Markt-Dynamik (Volumen)")
-        st.markdown("<p class='matrix-desc'>Volumen >130% des 20-Tage-Schnitts (+10 Pkt).</p>", unsafe_allow_html=True)
         
-        st.markdown("### 5. News-Sentiment (Zeit-Gewichtet)")
-        st.markdown("<p class='matrix-desc'>Nachrichten der letzten 24h zählen voll (NLP-Analyse, +10 Pkt max).</p>", unsafe_allow_html=True)
         
-        st.markdown("### 6. Analysten-Konsens (Prognosen)")
-        st.markdown("<p class='matrix-desc'>Upside-Potenzial von >15% basierend auf Analysten-Zielen (+10 Pkt).</p>", unsafe_allow_html=True)
+        st.markdown("### 4. Institutionelle Dynamik (Handelsvolumen)")
+        st.markdown("<p class='matrix-desc'><b>Relatives Volumen:</b> Vergleich des aktuellen Volumens mit dem Durchschnitt der letzten 20 Tage. Ein Anstieg um mehr als 30% (>130% Normwert) deutet darauf hin, dass 'Big Money' (Fonds/Banken) in die Aktie einsteigt (+10 Pkt). Volumen ohne Preisbewegung wird neutral gewertet.</p>", unsafe_allow_html=True)
+        
+        st.markdown("### 5. News-Sentiment (NLP & Zeit-Zerfall)")
+        st.markdown("<p class='matrix-desc'><b>Natural Language Processing:</b> Die KI scannt die letzten 5 Schlagzeilen auf bullische oder bearishe Begriffe. Dank <b>Time-Decay</b> zählt eine Nachricht von heute zu 100%, während News vom Vortag nur noch 50% Einfluss haben. Das stellt sicher, dass veraltete News das heutige Urteil nicht verfälschen (+10 Pkt max).</p>", unsafe_allow_html=True)
+        
+        st.markdown("### 6. Markterwartung (Analysten-Konsens)")
+        st.markdown("<p class='matrix-desc'><b>Median Kursziel:</b> Aggregation aller offiziellen Analystenziele (Wall Street). Die KI berechnet das prozentuale 'Upside'. Liegt das mittlere Ziel mehr als 15% über dem aktuellen Kurs, wertet die KI dies als Bestätigung der fundamentalen Chance (+10 Pkt).</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
