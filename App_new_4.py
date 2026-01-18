@@ -353,15 +353,17 @@ if valid_config:
             
             # --- TAB 1: DASHBOARD ---
             with tab_main:
+                # Layout Änderung: Kurs oben, Urteil unten
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.subheader(f"{ticker.info.get('longName', ticker_symbol)}")
-                    if ki_score >= 85: 
-                        st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION SETUP</div>", unsafe_allow_html=True)
-                    st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
                 with c2:
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
                     st.caption("vs. Vortag")
+
+                if ki_score >= 85: 
+                    st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
+                st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
 
                 st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
                 
