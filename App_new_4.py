@@ -471,25 +471,34 @@ if valid_config:
                 st.subheader("💰 Dividenden-Rechner")
                 st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
                 
-                div_yield = ticker.info.get('dividendYield', 0)
-                div_rate = ticker.info.get('dividendRate', 0)
+                # Solide Dividenden Daten Beschaffung
+                d_rate = ticker.info.get('dividendRate') or ticker.info.get('trailingAnnualDividendRate')
+                d_yield = ticker.info.get('dividendYield') or ticker.info.get('trailingAnnualDividendYield')
                 
-                # Fallback für Yield, falls yfinance None liefert, aber eine Rate bekannt ist
-                if (div_yield is None or div_yield == 0) and div_rate and curr_price:
-                    div_yield = div_rate / curr_price
+                # Berechnung der Rendite (Priorität: Manuell berechnet > API Wert)
+                if d_rate and curr_price > 0:
+                    calc_yield = d_rate / curr_price
+                elif d_yield:
+                    calc_yield = d_yield
+                else:
+                    calc_yield = 0
                 
-                # Fallback für Rate, falls yfinance None liefert, aber Yield bekannt ist
-                if (div_rate is None or div_rate == 0) and div_yield and curr_price:
-                    div_rate = curr_price * div_yield
+                # Berechnung der Rate (Priorität: API Wert > Manuell berechnet)
+                if d_rate:
+                    calc_rate = d_rate
+                elif d_yield and curr_price > 0:
+                    calc_rate = d_yield * curr_price
+                else:
+                    calc_rate = 0
 
                 cd1, cd2 = st.columns(2)
                 with cd1:
                     div_anzahl = st.number_input("Anzahl Aktien", value=pcs, step=1, help="Menge im Depot")
                 with cd2:
-                    st.metric("Dividenden-Rendite", f"{div_yield*100 if div_yield else 0:.2f}%")
+                    st.metric("Dividenden-Rendite", f"{calc_yield*100:.2f}%")
 
-                if div_rate:
-                    div_ges_eur = div_anzahl * div_rate * eur_rate
+                if calc_rate > 0:
+                    div_ges_eur = div_anzahl * calc_rate * eur_rate
                     c_res_d1, c_res_d2 = st.columns(2)
                     c_res_d1.metric("Jährliche Ausschüttung (est.)", f"{div_ges_eur:.2f} €")
                     c_res_d2.metric("Ø Monatlich", f"{div_ges_eur/12:.2f} €")
@@ -511,9 +520,8 @@ if valid_config:
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
                 
-                # Dividende in Basisdaten korrigiert, falls Yield fehlt
-                display_yield = div_yield if div_yield else 0
-                cf2.write(f"**Dividende:** {display_yield*100:.2f}%")
+                # Korrigierte Dividenden-Anzeige
+                cf2.write(f"**Dividende:** {calc_yield*100:.2f}%")
                 
                 h52 = i.get('fiftyTwoWeekHigh')
                 l52 = i.get('fiftyTwoWeekLow')
