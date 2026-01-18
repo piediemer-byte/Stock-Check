@@ -509,7 +509,27 @@ if valid_config:
 
             # --- TAB 3: CHART ---
             with tab_chart:
-                st.plotly_chart(plot_chart(hist_1y, ticker_symbol, details), use_container_width=True)
+                # Chart Timeframe Selector
+                t_col1, t_col2 = st.columns([2, 2])
+                with t_col1:
+                    # Radio Button für Zeitraum
+                    time_frame = st.radio("Zeitraum:", ["1 Tag", "1 Woche", "1 Monat"], index=1, horizontal=True, label_visibility="collapsed")
+                
+                # Logik für Datenabruf
+                if time_frame == "1 Tag":
+                    p, i = "1d", "5m"
+                elif time_frame == "1 Woche":
+                    p, i = "5d", "30m"
+                else: # 1 Monat
+                    p, i = "1mo", "1d"
+                
+                # Daten laden für Chart
+                chart_data = ticker.history(period=p, interval=i)
+                
+                if not chart_data.empty:
+                    st.plotly_chart(plot_chart(chart_data, ticker_symbol, details), use_container_width=True)
+                else:
+                    st.error("Keine Chart-Daten verfügbar.")
 
             # --- TAB 4: BASISDATEN ---
             with tab_fund:
