@@ -410,6 +410,7 @@ if valid_config:
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
                 cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
                 cf2.write(f"**52W Hoch:** {i.get('fiftyTwoWeekHigh', 'N/A')}")
+                cf2.write(f"**52W Tief:** {i.get('fiftyTwoWeekLow', 'N/A')}")
         else:
             st.error("Keine Daten geladen.")
     except Exception as e:
