@@ -131,7 +131,7 @@ def get_ki_verdict(ticker_obj, w):
         elif curr_p < s200: 
             score -= w['trend']; reasons.append(f"📉 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
         else:
-            reasons.append(f"➡️ Trend: Neutral (Konsolidierung)")
+            reasons.append(f"➡️ Trend: Neutral (Konsolidierung).")
 
         # 2. RSI
         delta = hist['Close'].diff()
@@ -193,7 +193,7 @@ def get_ki_verdict(ticker_obj, w):
         score += news_score
         details['news_score'] = news_score
         
-        reasons.append(f"📰 News Feed: Score {news_score} ({news_count} Artikel)")
+        reasons.append(f"📰 News Feed: Score {news_score} (aus {news_count} Quellen)")
         
         # 9. Sektor
         sector = inf.get('sector', 'N/A')
@@ -463,6 +463,33 @@ if valid_config:
                 r2.metric("Stop Loss", f"{curr_eur*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
                 r3.metric("Take Profit", f"{curr_eur*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
                 r4.metric("CRV", f"{crv:.2f}")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                # DIVIDENDEN RECHNER (NEU)
+                st.write("---")
+                st.subheader("💰 Dividenden-Rechner")
+                st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
+                
+                div_yield = ticker.info.get('dividendYield', 0)
+                div_rate = ticker.info.get('dividendRate', 0)
+                
+                if (div_rate is None or div_rate == 0) and div_yield and curr_price:
+                    div_rate = curr_price * div_yield
+
+                cd1, cd2 = st.columns(2)
+                with cd1:
+                    div_anzahl = st.number_input("Anzahl Aktien", value=pcs, step=1, help="Menge im Depot")
+                with cd2:
+                    st.metric("Dividenden-Rendite", f"{div_yield*100 if div_yield else 0:.2f}%")
+
+                if div_rate:
+                    div_ges_eur = div_anzahl * div_rate * eur_rate
+                    c_res_d1, c_res_d2 = st.columns(2)
+                    c_res_d1.metric("Jährliche Ausschüttung (est.)", f"{div_ges_eur:.2f} €")
+                    c_res_d2.metric("Ø Monatlich", f"{div_ges_eur/12:.2f} €")
+                else:
+                    st.info("Dieses Unternehmen schüttet aktuell keine Dividende aus.")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
 
