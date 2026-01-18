@@ -131,7 +131,7 @@ def get_ki_verdict(ticker_obj, w):
         elif curr_p < s200: 
             score -= w['trend']; reasons.append(f"📉 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
         else:
-            reasons.append(f"➡️ Trend: Neutral (Konsolidierung).")
+            reasons.append(f"➡️ Trend: Neutral (Konsolidierung)")
 
         # 2. RSI
         delta = hist['Close'].diff()
@@ -143,6 +143,7 @@ def get_ki_verdict(ticker_obj, w):
         
         if rsi > 70: score -= w['rsi']; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
         elif rsi < 30: score += w['rsi']; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
+        else: reasons.append(f"🔹 RSI: Neutral ({rsi:.1f})")
 
         # 3. Volatilität
         high_low = hist['High'] - hist['Low']
@@ -151,17 +152,20 @@ def get_ki_verdict(ticker_obj, w):
         details['atr_pct'] = vola_ratio
         
         if vola_ratio > 4: score -= w['vola']; reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
+        else: reasons.append(f"🔹 Vola: Angemessen ({vola_ratio:.1f}%)")
 
         # 4. Marge
         marge = inf.get('operatingMargins', 0)
         details['margin'] = marge
-        if marge > 0.15: score += w['margin']; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%) [+{w['margin']}]")
+        if marge > 0.15: score += w['margin']; reasons.append(f"💰 Marge: Stark ({marge*100:.1f}%) [+{w['margin']}]")
+        else: reasons.append(f"🔹 Marge: Normal (<15%)")
         
         # 5. Cash
         cash = inf.get('totalCash', 0) or 0
         debt = inf.get('totalDebt', 0) or 0
         details['net_cash'] = cash > debt
         if cash > debt: score += w['cash']; reasons.append(f"🏦 Bilanz: Net-Cash vorhanden [+{w['cash']}]")
+        else: reasons.append(f"🔹 Bilanz: Net-Debt (Schulden > Cash)")
 
         # 6. Bewertung
         kgv = inf.get('forwardPE', -1)
@@ -171,12 +175,14 @@ def get_ki_verdict(ticker_obj, w):
         
         if kgv and 0 < kgv < 18: score += w['value']; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
         elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += w['value']; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
+        else: reasons.append(f"🔹 Bewertung: Neutral/Teuer")
         
         # 7. Volumen
         vol_avg = hist['Volume'].tail(20).mean()
         curr_vol = hist['Volume'].iloc[-1]
         details['vol_spike'] = curr_vol > vol_avg * 1.3
         if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
+        else: reasons.append(f"🔹 Volumen: Normal")
         
         # 8. News (OPTIMIERT)
         yf_news = ticker_obj.news if ticker_obj.news else []
@@ -187,8 +193,7 @@ def get_ki_verdict(ticker_obj, w):
         score += news_score
         details['news_score'] = news_score
         
-        if news_count > 0:
-            reasons.append(f"📰 News Feed: Score {news_score} (aus {news_count} Quellen).")
+        reasons.append(f"📰 News Feed: Score {news_score} ({news_count} Artikel)")
         
         # 9. Sektor
         sector = inf.get('sector', 'N/A')
@@ -196,6 +201,7 @@ def get_ki_verdict(ticker_obj, w):
         start_p = float(hist['Close'].iloc[0])
         ytd_perf = (curr_p / start_p) - 1
         if start_p > 0 and ytd_perf > 0.2: score += w['sector']; reasons.append(f"🏆 Sektor: Top-Performer ({sector}) [+{w['sector']}]")
+        else: reasons.append(f"🔹 Sektor: Normal/Underperf. ({sector})")
 
         # 10. MACD
         exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
@@ -206,11 +212,13 @@ def get_ki_verdict(ticker_obj, w):
         details['macd_bull'] = is_bullish_macd
         
         if is_bullish_macd: score += w['macd']; reasons.append(f"🌊 MACD: Bullishes Momentum [+{w['macd']}]")
+        else: reasons.append(f"🔹 MACD: Neutral/Bearish")
 
         # 11. PEG
         peg = inf.get('pegRatio')
         details['peg'] = peg
         if peg is not None and 0.5 < peg < 1.5: score += w['peg']; reasons.append(f"⚖️ PEG: Wachstum/Preis optimal ({peg}) [+{w['peg']}]")
+        else: reasons.append(f"🔹 PEG: Neutral/Teuer ({peg if peg else 'N/A'})")
 
         # Capping
         score = min(100, max(0, score))
