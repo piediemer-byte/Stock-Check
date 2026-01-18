@@ -108,7 +108,11 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
 # --- 3. 11-FAKTOR KI-ENGINE ---
 def get_ki_verdict(ticker_obj, w):
     try:
+        # BUGFIX: Sicherstellen, dass inf ein Dictionary ist
         inf = ticker_obj.info
+        if inf is None:
+            inf = {}
+            
         hist = ticker_obj.history(period="1y")
         
         details = {}
@@ -471,8 +475,10 @@ if valid_config:
                 st.subheader("💰 Dividenden-Rechner")
                 st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
                 
-                d_rate = ticker.info.get('dividendRate') or ticker.info.get('trailingAnnualDividendRate')
-                d_yield = ticker.info.get('dividendYield') or ticker.info.get('trailingAnnualDividendYield')
+                # BUGFIX: Handle None in info
+                info = ticker.info if ticker.info is not None else {}
+                d_rate = info.get('dividendRate') or info.get('trailingAnnualDividendRate')
+                d_yield = info.get('dividendYield') or info.get('trailingAnnualDividendYield')
                 
                 # Berechnung der Rendite
                 if d_rate and curr_price > 0:
@@ -533,11 +539,14 @@ if valid_config:
             # --- TAB 4: BASISDATEN ---
             with tab_fund:
                 i = ticker.info
+                if i is None: i = {}
                 cf1, cf2 = st.columns(2)
                 cf1.write(f"**KGV:** {i.get('forwardPE', 'N/A')}")
                 cf1.write(f"**PEG:** {i.get('pegRatio', 'N/A')}")
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
+                
+                # Korrigierte Dividenden-Anzeige
                 cf2.write(f"**Dividende:** {calc_yield*100:.2f}%")
                 
                 h52 = i.get('fiftyTwoWeekHigh')
