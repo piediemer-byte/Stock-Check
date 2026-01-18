@@ -108,11 +108,7 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
 # --- 3. 11-FAKTOR KI-ENGINE ---
 def get_ki_verdict(ticker_obj, w):
     try:
-        # BUGFIX: Sicherstellen, dass inf ein Dictionary ist
         inf = ticker_obj.info
-        if inf is None:
-            inf = {}
-            
         hist = ticker_obj.history(period="1y")
         
         details = {}
@@ -123,7 +119,7 @@ def get_ki_verdict(ticker_obj, w):
         score = 50 
         reasons = []
         
-        # 1. Trend (Symbol: 🧭)
+        # 1. Trend
         s200 = hist['Close'].rolling(200).mean().iloc[-1]
         s50 = hist['Close'].rolling(50).mean().iloc[-1]
         details['sma200'] = s200
@@ -131,13 +127,13 @@ def get_ki_verdict(ticker_obj, w):
         details['curr_p'] = curr_p
         
         if curr_p > s50 > s200: 
-            score += w['trend']; reasons.append(f"🧭 Trend: Stark Bullish (über SMA 50/200) [+{w['trend']}]")
+            score += w['trend']; reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200) [+{w['trend']}]")
         elif curr_p < s200: 
-            score -= w['trend']; reasons.append(f"🧭 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
+            score -= w['trend']; reasons.append(f"📉 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
         else:
-            reasons.append(f"🧭 Trend: Neutral (Konsolidierung)")
+            reasons.append(f"➡️ Trend: Neutral (Konsolidierung).")
 
-        # 2. RSI (Symbol: ⚡)
+        # 2. RSI
         delta = hist['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -145,50 +141,50 @@ def get_ki_verdict(ticker_obj, w):
         rsi = 100 - (100 / (1 + rs.iloc[-1]))
         details['rsi'] = rsi
         
-        if rsi > 70: score -= w['rsi']; reasons.append(f"⚡ RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
-        elif rsi < 30: score += w['rsi']; reasons.append(f"⚡ RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
-        else: reasons.append(f"⚡ RSI: Neutral ({rsi:.1f})")
+        if rsi > 70: score -= w['rsi']; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
+        elif rsi < 30: score += w['rsi']; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
+        else: reasons.append(f"🔹 RSI: Neutral ({rsi:.1f})")
 
-        # 3. Volatilität (Symbol: 🎢)
+        # 3. Volatilität
         high_low = hist['High'] - hist['Low']
         atr = high_low.rolling(14).mean().iloc[-1]
         vola_ratio = (atr / curr_p) * 100
         details['atr_pct'] = vola_ratio
         
-        if vola_ratio > 4: score -= w['vola']; reasons.append(f"🎢 Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
-        else: reasons.append(f"🎢 Vola: Angemessen ({vola_ratio:.1f}%)")
+        if vola_ratio > 4: score -= w['vola']; reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
+        else: reasons.append(f"🔹 Vola: Angemessen ({vola_ratio:.1f}%)")
 
-        # 4. Marge (Symbol: 💎)
+        # 4. Marge
         marge = inf.get('operatingMargins', 0)
         details['margin'] = marge
-        if marge > 0.15: score += w['margin']; reasons.append(f"💎 Marge: Stark ({marge*100:.1f}%) [+{w['margin']}]")
-        else: reasons.append(f"💎 Marge: Normal (<15%)")
+        if marge > 0.15: score += w['margin']; reasons.append(f"💰 Marge: Stark ({marge*100:.1f}%) [+{w['margin']}]")
+        else: reasons.append(f"🔹 Marge: Normal (<15%)")
         
-        # 5. Cash (Symbol: 🏦)
+        # 5. Cash
         cash = inf.get('totalCash', 0) or 0
         debt = inf.get('totalDebt', 0) or 0
         details['net_cash'] = cash > debt
         if cash > debt: score += w['cash']; reasons.append(f"🏦 Bilanz: Net-Cash vorhanden [+{w['cash']}]")
-        else: reasons.append(f"🏦 Bilanz: Net-Debt (Schulden > Cash)")
+        else: reasons.append(f"🔹 Bilanz: Net-Debt (Schulden > Cash)")
 
-        # 6. Bewertung (Symbol: 🏷️)
+        # 6. Bewertung
         kgv = inf.get('forwardPE', -1)
         kuv = inf.get('priceToSalesTrailing12Months', -1)
         details['kgv'] = kgv
         details['kuv'] = kuv
         
-        if kgv and 0 < kgv < 18: score += w['value']; reasons.append(f"🏷️ Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
-        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += w['value']; reasons.append(f"🏷️ Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
-        else: reasons.append(f"🏷️ Bewertung: Neutral/Teuer")
+        if kgv and 0 < kgv < 18: score += w['value']; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
+        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += w['value']; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
+        else: reasons.append(f"🔹 Bewertung: Neutral/Teuer")
         
-        # 7. Volumen (Symbol: 📶)
+        # 7. Volumen
         vol_avg = hist['Volume'].tail(20).mean()
         curr_vol = hist['Volume'].iloc[-1]
         details['vol_spike'] = curr_vol > vol_avg * 1.3
-        if details['vol_spike']: score += w['volume']; reasons.append(f"📶 Volumen: Hohes Interesse [+{w['volume']}]")
-        else: reasons.append(f"📶 Volumen: Normal")
+        if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
+        else: reasons.append(f"🔹 Volumen: Normal")
         
-        # 8. News (Symbol: 📰)
+        # 8. News (OPTIMIERT)
         yf_news = ticker_obj.news if ticker_obj.news else []
         alt_news = get_alternative_news(ticker_obj.ticker)
         combined_news = yf_news + alt_news
@@ -199,15 +195,15 @@ def get_ki_verdict(ticker_obj, w):
         
         reasons.append(f"📰 News Feed: Score {news_score} (aus {news_count} Quellen)")
         
-        # 9. Sektor (Symbol: 🏅)
+        # 9. Sektor
         sector = inf.get('sector', 'N/A')
         details['sector'] = sector
         start_p = float(hist['Close'].iloc[0])
         ytd_perf = (curr_p / start_p) - 1
-        if start_p > 0 and ytd_perf > 0.2: score += w['sector']; reasons.append(f"🏅 Sektor: Top-Performer ({sector}) [+{w['sector']}]")
-        else: reasons.append(f"🏅 Sektor: Normal/Underperf. ({sector})")
+        if start_p > 0 and ytd_perf > 0.2: score += w['sector']; reasons.append(f"🏆 Sektor: Top-Performer ({sector}) [+{w['sector']}]")
+        else: reasons.append(f"🔹 Sektor: Normal/Underperf. ({sector})")
 
-        # 10. MACD (Symbol: 🌊)
+        # 10. MACD
         exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
         exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
         macd = exp1 - exp2
@@ -216,13 +212,13 @@ def get_ki_verdict(ticker_obj, w):
         details['macd_bull'] = is_bullish_macd
         
         if is_bullish_macd: score += w['macd']; reasons.append(f"🌊 MACD: Bullishes Momentum [+{w['macd']}]")
-        else: reasons.append(f"🌊 MACD: Neutral/Bearish")
+        else: reasons.append(f"🔹 MACD: Neutral/Bearish")
 
-        # 11. PEG (Symbol: ⚖️)
+        # 11. PEG
         peg = inf.get('pegRatio')
         details['peg'] = peg
         if peg is not None and 0.5 < peg < 1.5: score += w['peg']; reasons.append(f"⚖️ PEG: Wachstum/Preis optimal ({peg}) [+{w['peg']}]")
-        else: reasons.append(f"⚖️ PEG: Neutral/Teuer ({peg if peg else 'N/A'})")
+        else: reasons.append(f"🔹 PEG: Neutral/Teuer ({peg if peg else 'N/A'})")
 
         # Capping
         score = min(100, max(0, score))
@@ -278,7 +274,7 @@ with tab_desc:
 
     # --- 1. TREND ---
     w_trend = create_detailed_input(
-        "🧭 1. Markt-Phasierung (SMA 200)",
+        "1. Markt-Phasierung (SMA 200)",
         """Die Position zum <b>SMA 200</b> (200-Tage-Linie) ist der wichtigste Indikator für die "Großwetterlage".
         <ul><li><b>Bullish:</b> Kurs darüber = Asset ist 'gesund'. Fonds nutzen dies als Kaufzone.</li>
         <li><b>Bearish:</b> Kurs darunter = Verkäufer dominieren. Hohes Risiko.</li></ul>""",
@@ -287,7 +283,7 @@ with tab_desc:
 
     # --- 2. RSI ---
     w_rsi = create_detailed_input(
-        "⚡ 2. Relative Stärke Index (RSI 14)",
+        "2. Relative Stärke Index (RSI 14)",
         """Misst die Geschwindigkeit der Kursbewegung (0-100).
         <ul><li><b>Überkauft (>70):</b> Extreme Gier. Korrekturgefahr (Malus).</li>
         <li><b>Überverkauft (<30):</b> Panik. Oft guter antizyklischer Einstieg (Bonus).</li></ul>""",
@@ -296,7 +292,7 @@ with tab_desc:
 
     # --- 3. VOLATILITÄT ---
     w_vola = create_detailed_input(
-        "🎢 3. Volatilität (Malus)",
+        "3. Volatilität (Malus)",
         """Die ATR (Average True Range) misst das "Marktrauschen".
         <ul><li><b>Gefahr (>4%):</b> Bei hoher Vola wirst du oft unglücklich ausgestoppt.</li>
         <li>Dies ist ein <b>Malus-Faktor</b>: Je höher die Vola, desto mehr Punkte Abzug.</li></ul>""",
@@ -305,7 +301,7 @@ with tab_desc:
 
     # --- 4. MARGE ---
     w_margin = create_detailed_input(
-        "💎 4. Operative Marge",
+        "4. Operative Marge",
         """Beweist Preismacht. Kann das Unternehmen steigende Kosten weitergeben?
         <ul><li><b>Ziel:</b> >15% Marge zeigt ein starkes Geschäftsmodell (Moat).</li></ul>""",
         "w_m", 0, 20, 10
@@ -313,7 +309,7 @@ with tab_desc:
 
     # --- 5. CASH ---
     w_cash = create_detailed_input(
-        "🏦 5. Bilanz (Net-Cash)",
+        "5. Bilanz (Net-Cash)",
         """Hat das Unternehmen mehr Cash als Schulden?
         <ul><li><b>Vorteil:</b> Immun gegen hohe Zinsen und kann in Krisen Konkurrenten kaufen.</li></ul>""",
         "w_c", 0, 20, 5
@@ -321,7 +317,7 @@ with tab_desc:
 
     # --- 6. VALUE ---
     w_value = create_detailed_input(
-        "🏷️ 6. Bewertung (KGV / KUV)",
+        "6. Bewertung (KGV / KUV)",
         """Wachstum darf nicht um jeden Preis gekauft werden.
         <ul><li><b>KGV < 18:</b> Günstig für etablierte Firmen.</li>
         <li><b>KUV < 3:</b> Günstig für Wachstumsfirmen (noch ohne Gewinn).</li></ul>""",
@@ -330,7 +326,7 @@ with tab_desc:
     
     # --- 7. VOLUMEN ---
     w_volume = create_detailed_input(
-        "📶 7. Volumen-Analyse",
+        "7. Volumen-Analyse",
         """ "Volume precedes price". Steigt der Kurs bei hohem Volumen (>130% Ø)?
         <ul><li><b>Signal:</b> Deutet auf "Groß-Käufe" durch Institutionen hin (Smart Money).</li></ul>""",
         "w_vol", 0, 20, 10
@@ -338,7 +334,7 @@ with tab_desc:
 
     # --- 8. NEWS ---
     w_news_pos = create_detailed_input(
-        "📰 8. News Feed (Positiv)",
+        "8. News Feed (Positiv)",
         """KI-Scan der Schlagzeilen (letzte 24-72h) aus mehreren Quellen (Yahoo, Google News, Reuters, etc.).
         <ul><li>Gewichtet aktuelle News (Upgrades, Gewinne, Beats) stärker.</li></ul>""",
         "w_np", 0, 10, 5
@@ -346,7 +342,7 @@ with tab_desc:
 
     # --- 9. SEKTOR ---
     w_sector = create_detailed_input(
-        "🏅 9. Relative Stärke (Sektor)",
+        "9. Relative Stärke (Sektor)",
         """Wir suchen die "Alpha-Tiere".
         <ul><li><b>Outperformance:</b> Aktie muss im letzten Jahr >20% gestiegen sein. Wir kaufen Stärke, keine Verlierer.</li></ul>""",
         "w_sec", 0, 20, 10
@@ -354,7 +350,7 @@ with tab_desc:
 
     # --- 10. MACD ---
     w_macd = create_detailed_input(
-        "🌊 10. MACD Momentum",
+        "10. MACD Momentum",
         """Trend-Folge-Indikator.
         <ul><li><b>Crossover:</b> Bullishes Kreuzen der Signallinien deutet auf frisches Kauf-Momentum hin.</li></ul>""",
         "w_ma", 0, 20, 5
@@ -362,7 +358,7 @@ with tab_desc:
 
     # --- 11. PEG ---
     w_peg = create_detailed_input(
-        "⚖️ 11. PEG Ratio",
+        "11. PEG Ratio",
         """Königsklasse der Bewertung: KGV im Verhältnis zum Wachstum.
         <ul><li><b>0.5 - 1.5:</b> "Growth at a reasonable Price" (GARP). Du zahlst fair für das Wachstum.</li></ul>""",
         "w_p", 0, 20, 5
@@ -475,12 +471,9 @@ if valid_config:
                 st.subheader("💰 Dividenden-Rechner")
                 st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
                 
-                # BUGFIX: Handle None in info
-                info = ticker.info if ticker.info is not None else {}
-                d_rate = info.get('dividendRate') or info.get('trailingAnnualDividendRate')
-                d_yield = info.get('dividendYield') or info.get('trailingAnnualDividendYield')
+                d_rate = ticker.info.get('dividendRate') or ticker.info.get('trailingAnnualDividendRate')
+                d_yield = ticker.info.get('dividendYield') or ticker.info.get('trailingAnnualDividendYield')
                 
-                # Berechnung der Rendite
                 if d_rate and curr_price > 0:
                     calc_yield = d_rate / curr_price
                 elif d_yield:
@@ -488,7 +481,6 @@ if valid_config:
                 else:
                     calc_yield = 0
                 
-                # Berechnung der Rate
                 if d_rate:
                     calc_rate = d_rate
                 elif d_yield and curr_price > 0:
@@ -539,14 +531,11 @@ if valid_config:
             # --- TAB 4: BASISDATEN ---
             with tab_fund:
                 i = ticker.info
-                if i is None: i = {}
                 cf1, cf2 = st.columns(2)
                 cf1.write(f"**KGV:** {i.get('forwardPE', 'N/A')}")
                 cf1.write(f"**PEG:** {i.get('pegRatio', 'N/A')}")
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
-                
-                # Korrigierte Dividenden-Anzeige
                 cf2.write(f"**Dividende:** {calc_yield*100:.2f}%")
                 
                 h52 = i.get('fiftyTwoWeekHigh')
