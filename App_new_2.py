@@ -206,7 +206,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 5. APP ---
-st.title("📈 KI-Analyse Intelligence v2.1")
+st.title("📈 KI-Analyse Tool")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 eur_usd_rate = get_eur_usd_rate()
@@ -238,7 +238,7 @@ try:
         if main_score >= 85:
             st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION: Elite-Setup erkannt!</div>", unsafe_allow_html=True)
             
-        st.info(f"KI-Verdikt: {verdict} (Score: {main_score}/100)")
+        st.info(f"KI-Ergebnis: {verdict} (Score: {main_score}/100)")
         
         # TABS
         tab_main, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "📊 Chart", "🏢 Fundamentals", "📚 Erklärung (Deep Dive)"])
