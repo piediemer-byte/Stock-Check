@@ -360,8 +360,8 @@ if valid_config:
                         st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION SETUP</div>", unsafe_allow_html=True)
                     st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
                 with c2:
-                    # HIER WURDE DER USD KURS EINGEFÜGT
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
+                    st.caption("vs. Vortag")
 
                 st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
                 
