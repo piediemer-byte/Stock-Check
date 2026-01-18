@@ -233,7 +233,7 @@ def get_ki_verdict(ticker_obj, w):
     except Exception as e:
         return "⚠️ Error", str(e), 0, 0, 50, {}
 
-# --- 4. CHART FUNKTION (MIT EURO) ---
+# --- 4. CHART FUNKTION ---
 def plot_chart(hist, ticker_symbol, details):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Kurs'))
@@ -241,7 +241,6 @@ def plot_chart(hist, ticker_symbol, details):
     s200 = hist['Close'].rolling(window=200).mean()
     fig.add_trace(go.Scatter(x=hist.index, y=s50, line=dict(color='#ff9f43', width=1.5), name='SMA 50'))
     fig.add_trace(go.Scatter(x=hist.index, y=s200, line=dict(color='#2e86de', width=2), name='SMA 200'))
-    # Achsen-Titel auf Euro geändert
     fig.update_layout(title=f"Chart-Analyse: {ticker_symbol}", yaxis_title='Preis (€)', xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
@@ -250,8 +249,8 @@ st.title("📈 KI-Aktien-Analyse")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
-# TABS (Tab 4 wird zuerst verarbeitet für Input)
-tab_main, tab_calc, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "⚙️ Deep Dive & Setup"])
+# TABS (Tab 5 "Star-Scanner" hinzugefügt)
+tab_main, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "🌟 Star-Scanner", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
 # TAB 4: SETUP & DETAILLIERTE ERKLÄRUNGEN
@@ -472,11 +471,10 @@ if valid_config:
                 st.subheader("💰 Dividenden-Rechner")
                 st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
                 
-                # Solide Dividenden Daten Beschaffung
                 d_rate = ticker.info.get('dividendRate') or ticker.info.get('trailingAnnualDividendRate')
                 d_yield = ticker.info.get('dividendYield') or ticker.info.get('trailingAnnualDividendYield')
                 
-                # Berechnung der Rendite (Priorität: Manuell berechnet > API Wert)
+                # Berechnung der Rendite
                 if d_rate and curr_price > 0:
                     calc_yield = d_rate / curr_price
                 elif d_yield:
@@ -484,7 +482,7 @@ if valid_config:
                 else:
                     calc_yield = 0
                 
-                # Berechnung der Rate (Priorität: API Wert > Manuell berechnet)
+                # Berechnung der Rate
                 if d_rate:
                     calc_rate = d_rate
                 elif d_yield and curr_price > 0:
@@ -513,22 +511,16 @@ if valid_config:
                 # Chart Timeframe Selector
                 t_col1, t_col2 = st.columns([2, 2])
                 with t_col1:
-                    # Radio Button für Zeitraum
                     time_frame = st.radio("Zeitraum:", ["1 Tag", "1 Woche", "1 Monat"], index=1, horizontal=True, label_visibility="collapsed")
                 
-                # Logik für Datenabruf
-                if time_frame == "1 Tag":
-                    p, i = "1d", "5m"
-                elif time_frame == "1 Woche":
-                    p, i = "5d", "30m"
-                else: # 1 Monat
-                    p, i = "1mo", "1d"
+                if time_frame == "1 Tag": p, i = "1d", "5m"
+                elif time_frame == "1 Woche": p, i = "5d", "30m"
+                else: p, i = "1mo", "1d"
                 
-                # Daten laden für Chart
                 chart_data = ticker.history(period=p, interval=i)
                 
                 if not chart_data.empty:
-                    # HIER FINDET DIE UMRECHNUNG IN EURO STATT
+                    # UMRECHNUNG IN EURO
                     chart_data['Open'] = chart_data['Open'] * eur_rate
                     chart_data['High'] = chart_data['High'] * eur_rate
                     chart_data['Low'] = chart_data['Low'] * eur_rate
@@ -546,8 +538,6 @@ if valid_config:
                 cf1.write(f"**PEG:** {i.get('pegRatio', 'N/A')}")
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
-                
-                # Korrigierte Dividenden-Anzeige
                 cf2.write(f"**Dividende:** {calc_yield*100:.2f}%")
                 
                 h52 = i.get('fiftyTwoWeekHigh')
@@ -561,6 +551,49 @@ if valid_config:
                 
                 cf2.write(f"**SMA 50:** {details['sma50'] * eur_rate:.2f} €")
                 cf2.write(f"**SMA 200:** {details['sma200'] * eur_rate:.2f} €")
+
+            # --- TAB 5: STAR SCANNER (NEUER TAB) ---
+            with tab_scanner:
+                st.header("🌟 Star-Aktien Scanner (>= 95 Pkt)")
+                st.caption("Scannt eine Auswahl beliebter Aktien auf 'Star'-Status.")
+                
+                scan_list = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "AMD", "PLTR", "COIN", "MSTR", "SMCI", "AVGO", "LLY", "NVO", "SAP", "SIE.DE", "ALV.DE"]
+                
+                if st.button("Scan starten"):
+                    results = []
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, s_ticker in enumerate(scan_list):
+                        progress_bar.progress((idx + 1) / len(scan_list))
+                        status_text.text(f"Analysiere {s_ticker}...")
+                        try:
+                            s_obj = yf.Ticker(s_ticker)
+                            # Analyse durchführen
+                            _, _, _, _, s_score, _ = get_ki_verdict(s_obj, weights)
+                            
+                            if s_score >= 95:
+                                s_hist = s_obj.history(period="1d")
+                                if not s_hist.empty:
+                                    s_price = s_hist['Close'].iloc[-1] * eur_rate
+                                    results.append({
+                                        "Ticker": s_ticker,
+                                        "Preis (€)": round(s_price, 2),
+                                        "Score": s_score
+                                    })
+                        except:
+                            continue
+                            
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    if results:
+                        df_res = pd.DataFrame(results).sort_values(by="Preis (€)", ascending=True)
+                        st.success(f"{len(results)} Star-Aktien gefunden!")
+                        st.dataframe(df_res, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("Keine Aktien mit Score >= 95 in der Auswahl gefunden.")
+
         else:
             st.error("Keine Daten geladen.")
     except Exception as e:
