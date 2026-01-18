@@ -179,7 +179,6 @@ def get_ki_verdict(ticker_obj, w):
         if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
         
         # 8. News (OPTIMIERT)
-        # Wir kombinieren yfinance interne news mit unserem Scraper
         yf_news = ticker_obj.news if ticker_obj.news else []
         alt_news = get_alternative_news(ticker_obj.ticker)
         combined_news = yf_news + alt_news
@@ -189,7 +188,7 @@ def get_ki_verdict(ticker_obj, w):
         details['news_score'] = news_score
         
         if news_count > 0:
-            reasons.append(f"📰 Sentiment: Score {news_score} (aus {news_count} Quellen).")
+            reasons.append(f"📰 News Feed: Score {news_score} (aus {news_count} Quellen).")
         
         # 9. Sektor
         sector = inf.get('sector', 'N/A')
@@ -327,7 +326,7 @@ with tab_desc:
 
     # --- 8. NEWS ---
     w_news_pos = create_detailed_input(
-        "8. News Sentiment (Positiv)",
+        "8. News Feed (Positiv)",
         """KI-Scan der Schlagzeilen (letzte 24-72h) aus mehreren Quellen (Yahoo, Google News, Reuters, etc.).
         <ul><li>Gewichtet aktuelle News (Upgrades, Gewinne, Beats) stärker.</li></ul>""",
         "w_np", 0, 10, 5
