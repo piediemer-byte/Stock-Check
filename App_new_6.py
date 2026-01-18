@@ -43,13 +43,10 @@ def get_eur_usd_rate():
         return 0.92
 
 def get_alternative_news(ticker):
-    """Versucht News via Yahoo RSS (zuverlässiger) und dann Google RSS zu holen"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     news_items = []
-    
-    # 1. Versuch: Yahoo Finance RSS
     try:
         url_yahoo = f"https://finance.yahoo.com/rss/headline?s={ticker}"
         response = requests.get(url_yahoo, headers=headers, timeout=4)
@@ -60,7 +57,6 @@ def get_alternative_news(ticker):
                 news_items.append({'title': title, 'providerPublishTime': datetime.now().timestamp()})
     except: pass
 
-    # 2. Versuch: Google News RSS
     if len(news_items) < 3:
         try:
             url_google = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
@@ -94,7 +90,7 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
     
     return round(score, 1), analyzed_count
 
-# --- 3. 11-FAKTOR KI-ENGINE (OPTIMIERT & ROBUST) ---
+# --- 3. 11-FAKTOR KI-ENGINE ---
 def get_ki_verdict(ticker_obj, info_dict, hist_df, news_list, w):
     try:
         if len(hist_df) < 50: 
@@ -229,10 +225,12 @@ ticker_symbol = get_ticker_from_any(search_query)
 tab_main, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "🌟 Star-Scanner", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
-# TAB 6: SETUP & DETAILLIERTE ERKLÄRUNGEN
+# TAB 6: SETUP & DETAILLIERTE ERKLÄRUNGEN (WIEDER EINGEFÜGT)
 # ==============================================================================
 with tab_desc:
     st.header("⚙️ Strategie-Matrix & Gewichtung")
+    st.markdown("Passe hier die Regeln deiner Strategie an. Links findest du die **Erklärung**, rechts den **Einfluss (Punkte)**.")
+    
     MAX_BUDGET = 100
     budget_container = st.container()
 
@@ -244,21 +242,103 @@ with tab_desc:
             st.markdown(f"<div class='slider-label'>Punkte:</div>", unsafe_allow_html=True)
             return st.slider("Pkt", min_v, max_v, default_v, key=key, label_visibility="collapsed")
 
-    w_trend = create_detailed_input("🧭 1. Markt-Phasierung (SMA 200)", "Bullish über SMA 200, Bearish darunter.", "w_t", 0, 30, 15)
-    w_rsi = create_detailed_input("⚡ 2. Relative Stärke Index (RSI 14)", ">70 Überkauft (Malus), <30 Überverkauft (Bonus).", "w_r", 0, 20, 10)
-    w_vola = create_detailed_input("🎢 3. Volatilität (Malus)", "ATR > 4% gibt Abzug.", "w_v", 0, 20, 5)
-    w_margin = create_detailed_input("💎 4. Operative Marge", ">15% ist stark.", "w_m", 0, 20, 10)
-    w_cash = create_detailed_input("🏦 5. Bilanz (Net-Cash)", "Cash > Schulden ist positiv.", "w_c", 0, 20, 5)
-    w_value = create_detailed_input("🏷️ 6. Bewertung (KGV / KUV)", "KGV < 18 oder KUV < 3.", "w_val", 0, 20, 10)
-    w_volume = create_detailed_input("📶 7. Volumen-Analyse", "Volumen > 130% des Durchschnitts.", "w_vol", 0, 20, 10)
-    w_news_pos = create_detailed_input("📰 8. News Feed (Positiv)", "Sentiment Analyse der Headlines.", "w_np", 0, 10, 5)
-    w_sector = create_detailed_input("🏅 9. Relative Stärke (Sektor)", "Aktie performed besser als der Markt.", "w_sec", 0, 20, 10)
-    w_macd = create_detailed_input("🌊 10. MACD Momentum", "Bullishes Kreuzen der Signallinien.", "w_ma", 0, 20, 5)
-    w_peg = create_detailed_input("⚖️ 11. PEG Ratio", "Wachstum zum Preis (0.5 - 1.5 ideal).", "w_p", 0, 20, 5)
+    # --- 1. TREND ---
+    w_trend = create_detailed_input(
+        "🧭 1. Markt-Phasierung (SMA 200)",
+        """Die Position zum <b>SMA 200</b> (200-Tage-Linie) ist der wichtigste Indikator für die "Großwetterlage".
+        <ul><li><b>Bullish:</b> Kurs darüber = Asset ist 'gesund'. Fonds nutzen dies als Kaufzone.</li>
+        <li><b>Bearish:</b> Kurs darunter = Verkäufer dominieren. Hohes Risiko.</li></ul>""",
+        "w_t", 0, 30, 15
+    )
+
+    # --- 2. RSI ---
+    w_rsi = create_detailed_input(
+        "⚡ 2. Relative Stärke Index (RSI 14)",
+        """Misst die Geschwindigkeit der Kursbewegung (0-100).
+        <ul><li><b>Überkauft (>70):</b> Extreme Gier. Korrekturgefahr (Malus).</li>
+        <li><b>Überverkauft (<30):</b> Panik. Oft guter antizyklischer Einstieg (Bonus).</li></ul>""",
+        "w_r", 0, 20, 10
+    )
+
+    # --- 3. VOLATILITÄT ---
+    w_vola = create_detailed_input(
+        "🎢 3. Volatilität (Malus)",
+        """Die ATR (Average True Range) misst das "Marktrauschen".
+        <ul><li><b>Gefahr (>4%):</b> Bei hoher Vola wirst du oft unglücklich ausgestoppt.</li>
+        <li>Dies ist ein <b>Malus-Faktor</b>: Je höher die Vola, desto mehr Punkte Abzug.</li></ul>""",
+        "w_v", 0, 20, 5
+    )
+
+    # --- 4. MARGE ---
+    w_margin = create_detailed_input(
+        "💎 4. Operative Marge",
+        """Beweist Preismacht. Kann das Unternehmen steigende Kosten weitergeben?
+        <ul><li><b>Ziel:</b> >15% Marge zeigt ein starkes Geschäftsmodell (Moat).</li></ul>""",
+        "w_m", 0, 20, 10
+    )
+
+    # --- 5. CASH ---
+    w_cash = create_detailed_input(
+        "🏦 5. Bilanz (Net-Cash)",
+        """Hat das Unternehmen mehr Cash als Schulden?
+        <ul><li><b>Vorteil:</b> Immun gegen hohe Zinsen und kann in Krisen Konkurrenten kaufen.</li></ul>""",
+        "w_c", 0, 20, 5
+    )
+
+    # --- 6. VALUE ---
+    w_value = create_detailed_input(
+        "🏷️ 6. Bewertung (KGV / KUV)",
+        """Wachstum darf nicht um jeden Preis gekauft werden.
+        <ul><li><b>KGV < 18:</b> Günstig für etablierte Firmen.</li>
+        <li><b>KUV < 3:</b> Günstig für Wachstumsfirmen (noch ohne Gewinn).</li></ul>""",
+        "w_val", 0, 20, 10
+    )
+    
+    # --- 7. VOLUMEN ---
+    w_volume = create_detailed_input(
+        "📶 7. Volumen-Analyse",
+        """ "Volume precedes price". Steigt der Kurs bei hohem Volumen (>130% Ø)?
+        <ul><li><b>Signal:</b> Deutet auf "Groß-Käufe" durch Institutionen hin (Smart Money).</li></ul>""",
+        "w_vol", 0, 20, 10
+    )
+
+    # --- 8. NEWS ---
+    w_news_pos = create_detailed_input(
+        "📰 8. News Feed (Positiv)",
+        """KI-Scan der Schlagzeilen (letzte 24-72h) aus mehreren Quellen (Yahoo, Google News, Reuters, etc.).
+        <ul><li>Gewichtet aktuelle News (Upgrades, Gewinne, Beats) stärker.</li></ul>""",
+        "w_np", 0, 10, 5
+    )
+
+    # --- 9. SEKTOR ---
+    w_sector = create_detailed_input(
+        "🏅 9. Relative Stärke (Sektor)",
+        """Wir suchen die "Alpha-Tiere".
+        <ul><li><b>Outperformance:</b> Aktie muss im letzten Jahr >20% gestiegen sein. Wir kaufen Stärke, keine Verlierer.</li></ul>""",
+        "w_sec", 0, 20, 10
+    )
+
+    # --- 10. MACD ---
+    w_macd = create_detailed_input(
+        "🌊 10. MACD Momentum",
+        """Trend-Folge-Indikator.
+        <ul><li><b>Crossover:</b> Bullishes Kreuzen der Signallinien deutet auf frisches Kauf-Momentum hin.</li></ul>""",
+        "w_ma", 0, 20, 5
+    )
+
+    # --- 11. PEG ---
+    w_peg = create_detailed_input(
+        "⚖️ 11. PEG Ratio",
+        """Königsklasse der Bewertung: KGV im Verhältnis zum Wachstum.
+        <ul><li><b>0.5 - 1.5:</b> "Growth at a reasonable Price" (GARP). Du zahlst fair für das Wachstum.</li></ul>""",
+        "w_p", 0, 20, 5
+    )
     
     st.divider()
+    st.markdown("**Zusatz-Regel (Malus):**")
     w_news_neg = st.slider("Abzug pro negativer News (zählt nicht ins Budget)", 0, 15, 7)
 
+    # --- BUDGET CHECK ---
     current_sum = w_trend + w_rsi + w_vola + w_margin + w_cash + w_value + w_peg + w_volume + w_sector + w_macd + w_news_pos
     
     with budget_container:
@@ -347,14 +427,10 @@ if valid_config:
                 
                 # --- FIX: ANALYSTEN ZIEL ---
                 with cr2:
-                    # Währung prüfen für korrekte Umrechnung
                     stock_currency = current_info.get('currency', 'USD')
                     conversion_rate = eur_rate if stock_currency != 'EUR' else 1.0
-                    
-                    # Target holen mit Fallback
                     tgt = current_info.get('targetMeanPrice')
-                    if not tgt:
-                        tgt = current_info.get('targetMedianPrice')
+                    if not tgt: tgt = current_info.get('targetMedianPrice')
 
                     if tgt:
                         pot = ((tgt/curr_price)-1)*100
