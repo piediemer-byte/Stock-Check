@@ -185,7 +185,7 @@ def plot_chart(hist, ticker_symbol, details):
     return fig
 
 # --- 5. MAIN APP ---
-st.title("📈 KI-Analyse Tool (Custom)")
+st.title("📈 KI-Aktien-Analyse")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
@@ -361,7 +361,7 @@ if valid_config:
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
                     st.caption("vs. Vortag")
 
-                # Schwellenwert auf 95 geändert
+                # Schwellenwert auf 95
                 if ki_score >= 95: 
                     st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
                 st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
@@ -393,10 +393,15 @@ if valid_config:
                 risk_eur = inv * (risk_pct/100)
                 prof_eur = inv * (target_pct/100)
                 
-                r1, r2, r3 = st.columns(3)
+                # CRV Hinzugefügt
+                crv = prof_eur / risk_eur if risk_eur > 0 else 0
+                
+                r1, r2, r3, r4 = st.columns(4)
                 r1.metric("Menge", f"{pcs} Stk.")
                 r2.metric("Stop Loss", f"{curr_eur*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
                 r3.metric("Take Profit", f"{curr_eur*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
+                r4.metric("CRV", f"{crv:.2f}")
+                
                 st.markdown("</div>", unsafe_allow_html=True)
 
             # --- TAB 2: CHART ---
