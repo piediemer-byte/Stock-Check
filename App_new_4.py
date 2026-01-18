@@ -23,25 +23,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. GEWICHTUNGS-KONFIGURATION & VALIDIERUNG (SIDEBAR) ---
+# Hier werden die Slider für die Gewichtung erstellt
 st.sidebar.header("⚙️ Strategie-Einstellungen")
 
-# MAXIMAL-BUDGET KONSTANTE
 MAX_WEIGHT_BUDGET = 100 
 
+# Expander standardmäßig geöffnet, damit man die Einstellungen sieht
 with st.sidebar.expander("📊 Kriterien-Gewichtung anpassen", expanded=True):
-    st.caption(f"Verteile maximal **{MAX_WEIGHT_BUDGET} Punkte** auf die Kriterien, um die Analyse zu schärfen.")
+    st.caption(f"Verteile maximal **{MAX_WEIGHT_BUDGET} Punkte** auf die Kriterien.")
     
+    # Technische Analyse
     w_trend = st.slider("1. Trend (SMA)", 0, 30, 15)
     w_rsi = st.slider("2. RSI (Indikator)", 0, 20, 10)
     w_vola = st.slider("3. Volatilität (Malus)", 0, 20, 5)
     
     st.divider()
+    # Fundamentaldaten
     w_margin = st.slider("4. Marge (>15%)", 0, 20, 10)
     w_cash = st.slider("5. Net-Cash / Bilanz", 0, 20, 5)
     w_value = st.slider("6. Bewertung (KGV/KUV)", 0, 20, 10)
     w_peg = st.slider("11. PEG Ratio", 0, 20, 5)
     
     st.divider()
+    # Sonstiges
     w_volume = st.slider("7. Volumen-Spike", 0, 20, 10)
     w_sector = st.slider("9. Sektor-Performer", 0, 20, 10)
     w_macd = st.slider("10. MACD Momentum", 0, 20, 5)
@@ -49,21 +53,16 @@ with st.sidebar.expander("📊 Kriterien-Gewichtung anpassen", expanded=True):
     st.divider()
     st.caption("📰 News Sentiment Gewichtung")
     w_news_pos = st.slider("News Positiv (pro Artikel)", 0, 10, 5)
-    # Negativ News zählen wir nicht ins "Budget" für den Score-Aufbau, 
-    # da sie Punkte abziehen, aber wir prüfen News-Positiv als Faktor.
+    # Negativ News zählen nicht ins positive Budget, da sie Punkte abziehen
     w_news_neg = st.slider("News Negativ (Malus)", 0, 15, 7)
 
-    # --- VALIDIERUNG ---
-    # Summe aller positiven Einflussfaktoren (News Negativ und Vola sind Malus, 
-    # tragen aber zur "Wichtigkeit" bei. Hier summieren wir die 'Gewichte' als Komplexität).
-    # Wir nehmen hier die Summe aller Regler (exkl. News Negativ, das ist Ansichtssache, 
-    # aber um streng zu sein, zählen wir alle 'Gewichtungen' zusammen).
+    # --- Validierung des Budgets ---
     current_weight_sum = (w_trend + w_rsi + w_vola + w_margin + w_cash + 
                           w_value + w_peg + w_volume + w_sector + w_macd + w_news_pos)
 
     st.divider()
     
-    # Progress Bar Berechnung
+    # Berechnung der Progress Bar
     progress = min(current_weight_sum / MAX_WEIGHT_BUDGET, 1.0)
     
     if current_weight_sum <= MAX_WEIGHT_BUDGET:
@@ -76,7 +75,7 @@ with st.sidebar.expander("📊 Kriterien-Gewichtung anpassen", expanded=True):
         st.error(f"Bitte reduziere die Gewichte um {current_weight_sum - MAX_WEIGHT_BUDGET} Punkte.")
         is_config_valid = False
 
-    # Dictionary für die Übergabe
+    # Erstellen des Dictionaries für die Übergabe an die Funktion
     weights = {
         'trend': w_trend, 'rsi': w_rsi, 'vola': w_vola,
         'margin': w_margin, 'cash': w_cash, 'value': w_value,
@@ -291,10 +290,10 @@ def plot_chart(hist, ticker_symbol, details):
 # --- 6. MAIN APP LOGIC ---
 st.title("📈 KI-Analyse Tool (Custom)")
 
-# Überprüfung des Validierungs-Status aus der Sidebar
+# Stop wenn Config ungültig
 if not is_config_valid:
     st.warning("⚠️ **Analyse pausiert:** Deine Gewichtungs-Einstellungen überschreiten das maximale Budget von 100 Punkten. Bitte passe die Regler in der Sidebar an, um fortzufahren.")
-    st.stop() # Stoppt die Ausführung des restlichen Codes
+    st.stop()
 
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
@@ -397,7 +396,7 @@ try:
                 st.write(f"**Beta (Volatilität):** {inf.get('beta', 'N/A')}")
                 st.write(f"**52-Wochen Hoch:** {inf.get('fiftyTwoWeekHigh', 'N/A')} $")
 
-        # TAB 4: ERKLÄRUNG / DEEP DIVE (WIEDER DETAILLIERT)
+        # TAB 4: ERKLÄRUNG / DEEP DIVE (DETAILLIERT & DYNAMISCH)
         with tab_desc:
             st.header("🔍 Strategischer Deep Dive: Die 11-Faktor-Matrix")
             st.markdown("Hier wird detailliert erklärt, warum die KI zu ihrem Urteil kommt und was die Fachbegriffe für deine Strategie bedeuten. **Die Punkte basieren auf deiner Gewichtung.**")
