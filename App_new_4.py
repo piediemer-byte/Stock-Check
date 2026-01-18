@@ -377,7 +377,8 @@ if valid_config:
                     if tgt:
                         pot = ((tgt/curr_price)-1)*100
                         col = "#00b894" if pot > 0 else "#ff7675"
-                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt:.2f}$ (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
+                        # Währungsanpassung hier:
+                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt * eur_rate:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
 
