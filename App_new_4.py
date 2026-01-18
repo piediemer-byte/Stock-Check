@@ -42,34 +42,55 @@ def get_eur_usd_rate():
     except:
         return 0.92
 
+# --- VERBESSERTE NEWS FUNKTION ---
 def get_alternative_news(ticker):
+    """Versucht News via Yahoo RSS (zuverlässiger) und dann Google RSS zu holen"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    news_items = []
+    
+    # 1. Versuch: Yahoo Finance RSS (Direkt für den Ticker)
     try:
-        # User-Agent Header hinzugefügt, damit Google die Anfrage nicht blockiert
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        url = f"https://news.google.com/rss/search?q={ticker}+stock+finance&hl=en-US&gl=US&ceid=US:en"
-        response = requests.get(url, headers=headers, timeout=4)
+        url_yahoo = f"https://finance.yahoo.com/rss/headline?s={ticker}"
+        response = requests.get(url_yahoo, headers=headers, timeout=4)
         if response.status_code == 200:
             root = ET.fromstring(response.content)
-            news_items = []
-            for item in root.findall('./channel/item')[:7]:
+            for item in root.findall('./channel/item')[:5]:
                 title = item.find('title').text if item.find('title') is not None else ""
                 news_items.append({
                     'title': title, 
                     'providerPublishTime': datetime.now().timestamp()
                 })
-            return news_items
     except:
-        return []
-    return []
+        pass
+
+    # 2. Versuch: Google News RSS (Falls Yahoo leer ist oder als Ergänzung)
+    if len(news_items) < 3:
+        try:
+            url_google = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
+            response = requests.get(url_google, headers=headers, timeout=4)
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                for item in root.findall('./channel/item')[:5]:
+                    title = item.find('title').text if item.find('title') is not None else ""
+                    # Duplikate vermeiden
+                    if not any(n['title'] == title for n in news_items):
+                        news_items.append({
+                            'title': title, 
+                            'providerPublishTime': datetime.now().timestamp()
+                        })
+        except:
+            pass
+            
+    return news_items
 
 def analyze_news_sentiment(news_list, w_pos, w_neg):
     if not news_list: return 0, 0
     score = 0
     now = datetime.now(timezone.utc)
-    pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump', 'outperform', 'strong']
-    neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge', 'downgrade', 'weak']
+    pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump', 'outperform', 'strong', 'gains']
+    neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge', 'downgrade', 'weak', 'crashing']
     
     analyzed_count = 0
     for n in news_list[:10]:
@@ -157,10 +178,11 @@ def get_ki_verdict(ticker_obj, w):
         details['vol_spike'] = curr_vol > vol_avg * 1.3
         if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
         
-        # 8. News
-        yf_news = ticker_obj.news
-        google_news = get_alternative_news(ticker_obj.ticker)
-        combined_news = yf_news + google_news
+        # 8. News (OPTIMIERT)
+        # Wir kombinieren yfinance interne news mit unserem Scraper
+        yf_news = ticker_obj.news if ticker_obj.news else []
+        alt_news = get_alternative_news(ticker_obj.ticker)
+        combined_news = yf_news + alt_news
         
         news_score, news_count = analyze_news_sentiment(combined_news, w['news_pos'], w['news_neg'])
         score += news_score
