@@ -1,0 +1,502 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import requests
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+
+# --- 1. UI SETUP & CONFIG ---
+st.set_page_config(page_title="KI-Analyse Intelligence", layout="centered")
+
+st.markdown("""
+<style>
+.status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.9em; white-space: pre-wrap; }
+.high-conviction { background: linear-gradient(90deg, #ffd700, #bf953f); color: #000; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 2px solid #fff; }
+.calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }
+.reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; height: 100%; }
+.explain-text { font-size: 0.85em; color: #b0bec5; line-height: 1.5; text-align: justify; }
+.explain-text ul { padding-left: 20px; margin-top: 5px; margin-bottom: 5px; }
+.factor-title { font-weight: bold; font-size: 1.05em; color: #ffffff; margin-top: 15px; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
+.budget-ok { color: #00b894; font-weight: bold; }
+.budget-err { color: #ff7675; font-weight: bold; }
+.slider-label { font-size: 0.8em; color: #fff; margin-bottom: -10px; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 2. HELFER-FUNKTIONEN ---
+def get_ticker_from_any(query):
+    try:
+        search = yf.Search(query, max_results=1)
+        return search.quotes[0]['symbol'] if search.quotes else query.upper()
+    except: 
+        return query.upper()
+
+def get_eur_usd_rate():
+    try:
+        hist = yf.Ticker("EURUSD=X").history(period="1d")
+        if not hist.empty:
+            return 1 / float(hist['Close'].iloc[-1])
+        return 0.92 
+    except:
+        return 0.92
+
+def get_alternative_news(ticker):
+    """Versucht News via Yahoo RSS (zuverlässiger) und dann Google RSS zu holen"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    news_items = []
+    
+    # 1. Versuch: Yahoo Finance RSS
+    try:
+        url_yahoo = f"https://finance.yahoo.com/rss/headline?s={ticker}"
+        response = requests.get(url_yahoo, headers=headers, timeout=4)
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            for item in root.findall('./channel/item')[:5]:
+                title = item.find('title').text if item.find('title') is not None else ""
+                news_items.append({'title': title, 'providerPublishTime': datetime.now().timestamp()})
+    except: pass
+
+    # 2. Versuch: Google News RSS
+    if len(news_items) < 3:
+        try:
+            url_google = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
+            response = requests.get(url_google, headers=headers, timeout=4)
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                for item in root.findall('./channel/item')[:5]:
+                    title = item.find('title').text if item.find('title') is not None else ""
+                    if not any(n['title'] == title for n in news_items):
+                        news_items.append({'title': title, 'providerPublishTime': datetime.now().timestamp()})
+        except: pass
+    return news_items
+
+def analyze_news_sentiment(news_list, w_pos, w_neg):
+    if not news_list: return 0, 0
+    score = 0
+    now = datetime.now(timezone.utc)
+    pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump', 'outperform', 'strong', 'gains']
+    neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge', 'downgrade', 'weak', 'crashing']
+    
+    analyzed_count = 0
+    for n in news_list[:10]:
+        title = n.get('title', '').lower()
+        pub_time = datetime.fromtimestamp(n.get('providerPublishTime', now.timestamp()), timezone.utc)
+        hours_old = (now - pub_time).total_seconds() / 3600
+        weight = 1.0 if hours_old < 24 else (0.5 if hours_old < 72 else 0.2)
+        
+        if any(w in title for w in pos_w_list): score += (w_pos * weight)
+        if any(w in title for w in neg_w_list): score -= (w_neg * weight)
+        analyzed_count += 1
+    
+    return round(score, 1), analyzed_count
+
+# --- 3. 11-FAKTOR KI-ENGINE (OPTIMIERT & ROBUST) ---
+def get_ki_verdict(ticker_obj, info_dict, hist_df, news_list, w):
+    try:
+        # Check if history is sufficient
+        if len(hist_df) < 50: 
+            return "➡️ Neutral", "Zu wenig historische Daten.", 0, 0, 50, {}
+        
+        details = {}
+        curr_p = float(hist_df['Close'].iloc[-1])
+        score = 50 
+        reasons = []
+        
+        # 1. Trend (Symbol: 🧭)
+        s200 = hist_df['Close'].rolling(200).mean().iloc[-1]
+        s50 = hist_df['Close'].rolling(50).mean().iloc[-1]
+        details['sma200'] = s200 if not pd.isna(s200) else curr_p
+        details['sma50'] = s50 if not pd.isna(s50) else curr_p
+        details['curr_p'] = curr_p
+        
+        if not pd.isna(s50) and not pd.isna(s200):
+            if curr_p > s50 > s200: score += w['trend']; reasons.append(f"🧭 Trend: Stark Bullish (über SMA 50/200) [+{w['trend']}]")
+            elif curr_p < s200: score -= w['trend']; reasons.append(f"🧭 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
+            else: reasons.append(f"🧭 Trend: Neutral (Konsolidierung)")
+        else: reasons.append(f"🧭 Trend: Daten unvollständig")
+
+        # 2. RSI (Symbol: ⚡)
+        delta = hist_df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1]))
+        details['rsi'] = rsi
+        
+        if rsi > 70: score -= w['rsi']; reasons.append(f"⚡ RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
+        elif rsi < 30: score += w['rsi']; reasons.append(f"⚡ RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
+        else: reasons.append(f"⚡ RSI: Neutral ({rsi:.1f})")
+
+        # 3. Volatilität (Symbol: 🎢)
+        high_low = hist_df['High'] - hist_df['Low']
+        atr = high_low.rolling(14).mean().iloc[-1]
+        vola_ratio = (atr / curr_p) * 100
+        details['atr_pct'] = vola_ratio
+        
+        if vola_ratio > 4: score -= w['vola']; reasons.append(f"🎢 Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
+        else: reasons.append(f"🎢 Vola: Angemessen ({vola_ratio:.1f}%)")
+
+        # 4. Marge (Symbol: 💎)
+        marge = info_dict.get('operatingMargins', 0)
+        details['margin'] = marge
+        if marge > 0.15: score += w['margin']; reasons.append(f"💎 Marge: Stark ({marge*100:.1f}%) [+{w['margin']}]")
+        else: reasons.append(f"💎 Marge: Normal (<15%)")
+        
+        # 5. Cash (Symbol: 🏦)
+        cash = info_dict.get('totalCash', 0) or 0
+        debt = info_dict.get('totalDebt', 0) or 0
+        if cash > debt: score += w['cash']; reasons.append(f"🏦 Bilanz: Net-Cash vorhanden [+{w['cash']}]")
+        else: reasons.append(f"🏦 Bilanz: Net-Debt (Schulden > Cash)")
+
+        # 6. Bewertung (Symbol: 🏷️)
+        kgv = info_dict.get('forwardPE', -1)
+        kuv = info_dict.get('priceToSalesTrailing12Months', -1)
+        details['kgv'] = kgv
+        
+        if kgv and 0 < kgv < 18: score += w['value']; reasons.append(f"🏷️ Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
+        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += w['value']; reasons.append(f"🏷️ Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
+        else: reasons.append(f"🏷️ Bewertung: Neutral/Teuer")
+        
+        # 7. Volumen (Symbol: 📶)
+        vol_avg = hist_df['Volume'].tail(20).mean()
+        curr_vol = hist_df['Volume'].iloc[-1]
+        details['vol_spike'] = curr_vol > vol_avg * 1.3
+        if details['vol_spike']: score += w['volume']; reasons.append(f"📶 Volumen: Hohes Interesse [+{w['volume']}]")
+        else: reasons.append(f"📶 Volumen: Normal")
+        
+        # 8. News (Symbol: 📰)
+        news_score, news_count = analyze_news_sentiment(news_list, w['news_pos'], w['news_neg'])
+        score += news_score
+        details['news_score'] = news_score
+        reasons.append(f"📰 News Feed: Score {news_score} (aus {news_count} Quellen)")
+        
+        # 9. Sektor (Symbol: 🏅)
+        sector = info_dict.get('sector', 'N/A')
+        start_p = float(hist_df['Close'].iloc[0])
+        ytd_perf = (curr_p / start_p) - 1
+        if start_p > 0 and ytd_perf > 0.2: score += w['sector']; reasons.append(f"🏅 Sektor: Top-Performer ({sector}) [+{w['sector']}]")
+        else: reasons.append(f"🏅 Sektor: Normal/Underperf. ({sector})")
+
+        # 10. MACD (Symbol: 🌊)
+        exp1 = hist_df['Close'].ewm(span=12, adjust=False).mean()
+        exp2 = hist_df['Close'].ewm(span=26, adjust=False).mean()
+        macd = exp1 - exp2
+        signal = macd.ewm(span=9, adjust=False).mean()
+        is_bullish_macd = macd.iloc[-1] > signal.iloc[-1]
+        
+        if is_bullish_macd: score += w['macd']; reasons.append(f"🌊 MACD: Bullishes Momentum [+{w['macd']}]")
+        else: reasons.append(f"🌊 MACD: Neutral/Bearish")
+
+        # 11. PEG (Symbol: ⚖️)
+        peg = info_dict.get('pegRatio')
+        if peg is not None and 0.5 < peg < 1.5: score += w['peg']; reasons.append(f"⚖️ PEG: Wachstum/Preis optimal ({peg}) [+{w['peg']}]")
+        else: reasons.append(f"⚖️ PEG: Neutral/Teuer ({peg if peg else 'N/A'})")
+
+        # Capping
+        score = min(100, max(0, score))
+
+        if score >= 95: verdict = "🌟 STAR AKTIE" 
+        elif score >= 80: verdict = "💎 STRONG BUY"
+        elif score >= 60: verdict = "🚀 BUY"
+        elif score >= 35: verdict = "➡️ HOLD"
+        else: verdict = "🛑 SELL"
+        
+        return verdict, "\n".join(reasons), vola_ratio, details['sma200'], score, details
+
+    except Exception as e:
+        return "⚠️ Error", f"Berechnungsfehler: {str(e)}", 0, 0, 50, {}
+
+# --- 4. CHART FUNKTION (EURO) ---
+def plot_chart(hist, ticker_symbol, details):
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Kurs'))
+    s50 = hist['Close'].rolling(window=50).mean()
+    s200 = hist['Close'].rolling(window=200).mean()
+    fig.add_trace(go.Scatter(x=hist.index, y=s50, line=dict(color='#ff9f43', width=1.5), name='SMA 50'))
+    fig.add_trace(go.Scatter(x=hist.index, y=s200, line=dict(color='#2e86de', width=2), name='SMA 200'))
+    fig.update_layout(title=f"Chart-Analyse: {ticker_symbol}", yaxis_title='Preis (€)', xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig
+
+# --- 5. MAIN APP ---
+st.title("📈 KI-Aktien-Analyse")
+search_query = st.text_input("Suche (Ticker):", value="NVDA")
+ticker_symbol = get_ticker_from_any(search_query)
+
+# TABS
+tab_main, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "🌟 Star-Scanner", "⚙️ Deep Dive & Setup"])
+
+# ==============================================================================
+# TAB 6: SETUP & GEWICHTUNG
+# ==============================================================================
+with tab_desc:
+    st.header("⚙️ Strategie-Matrix & Gewichtung")
+    MAX_BUDGET = 100
+    budget_container = st.container()
+
+    def create_detailed_input(title, text_html, key, min_v, max_v, default_v):
+        st.markdown(f"<div class='factor-title'>{title}</div>", unsafe_allow_html=True)
+        c1, c2 = st.columns([3, 1])
+        with c1: st.markdown(f"<div class='explain-text'>{text_html}</div>", unsafe_allow_html=True)
+        with c2: 
+            st.markdown(f"<div class='slider-label'>Punkte:</div>", unsafe_allow_html=True)
+            return st.slider("Pkt", min_v, max_v, default_v, key=key, label_visibility="collapsed")
+
+    w_trend = create_detailed_input("🧭 1. Markt-Phasierung (SMA 200)", "Bullish über SMA 200, Bearish darunter.", "w_t", 0, 30, 15)
+    w_rsi = create_detailed_input("⚡ 2. Relative Stärke Index (RSI 14)", ">70 Überkauft (Malus), <30 Überverkauft (Bonus).", "w_r", 0, 20, 10)
+    w_vola = create_detailed_input("🎢 3. Volatilität (Malus)", "ATR > 4% gibt Abzug.", "w_v", 0, 20, 5)
+    w_margin = create_detailed_input("💎 4. Operative Marge", ">15% ist stark.", "w_m", 0, 20, 10)
+    w_cash = create_detailed_input("🏦 5. Bilanz (Net-Cash)", "Cash > Schulden ist positiv.", "w_c", 0, 20, 5)
+    w_value = create_detailed_input("🏷️ 6. Bewertung (KGV / KUV)", "KGV < 18 oder KUV < 3.", "w_val", 0, 20, 10)
+    w_volume = create_detailed_input("📶 7. Volumen-Analyse", "Volumen > 130% des Durchschnitts.", "w_vol", 0, 20, 10)
+    w_news_pos = create_detailed_input("📰 8. News Feed (Positiv)", "Sentiment Analyse der Headlines.", "w_np", 0, 10, 5)
+    w_sector = create_detailed_input("🏅 9. Relative Stärke (Sektor)", "Aktie performed besser als der Markt.", "w_sec", 0, 20, 10)
+    w_macd = create_detailed_input("🌊 10. MACD Momentum", "Bullishes Kreuzen der Signallinien.", "w_ma", 0, 20, 5)
+    w_peg = create_detailed_input("⚖️ 11. PEG Ratio", "Wachstum zum Preis (0.5 - 1.5 ideal).", "w_p", 0, 20, 5)
+    
+    st.divider()
+    w_news_neg = st.slider("Abzug pro negativer News (zählt nicht ins Budget)", 0, 15, 7)
+
+    current_sum = w_trend + w_rsi + w_vola + w_margin + w_cash + w_value + w_peg + w_volume + w_sector + w_macd + w_news_pos
+    
+    with budget_container:
+        st.write("---")
+        if current_sum <= MAX_BUDGET:
+            st.markdown(f"**Budget:** <span class='budget-ok'>{current_sum} / {MAX_BUDGET}</span>", unsafe_allow_html=True)
+            valid_config = True
+        else:
+            st.markdown(f"**Budget:** <span class='budget-err'>{current_sum} / {MAX_BUDGET}</span> (Zu viel!)", unsafe_allow_html=True)
+            st.error(f"Bitte reduziere die Punkte um {current_sum - MAX_BUDGET}.")
+            valid_config = False
+
+    weights = {
+        'trend': w_trend, 'rsi': w_rsi, 'vola': w_vola, 'margin': w_margin, 'cash': w_cash, 
+        'value': w_value, 'peg': w_peg, 'volume': w_volume, 'sector': w_sector, 
+        'macd': w_macd, 'news_pos': w_news_pos, 'news_neg': w_news_neg
+    }
+
+# ==============================================================================
+# MAIN LOGIC
+# ==============================================================================
+if valid_config:
+    try:
+        # ZENTRALER DATA FETCH
+        ticker = yf.Ticker(ticker_symbol)
+        eur_rate = get_eur_usd_rate()
+        
+        # 1. Info sicher laden
+        try:
+            current_info = ticker.info
+            if current_info is None: current_info = {}
+        except:
+            current_info = {}
+            
+        # 2. History laden
+        hist_1y = ticker.history(period="1y")
+        
+        # 3. News laden
+        yf_news = ticker.news if ticker.news else []
+        alt_news = get_alternative_news(ticker.ticker)
+        current_news = yf_news + alt_news
+
+        if not hist_1y.empty:
+            # ANALYSE DURCHFÜHREN
+            verdict, reasons, vola, sma200, ki_score, details = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
+            
+            curr_price = hist_1y['Close'].iloc[-1]
+            curr_eur = curr_price * eur_rate
+            prev_close = hist_1y['Close'].iloc[-2]
+            change_pct = ((curr_price / prev_close) - 1) * 100
+            
+            # --- TAB 1: DASHBOARD ---
+            with tab_main:
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    long_name = current_info.get('longName', ticker_symbol)
+                    st.subheader(long_name)
+                with c2:
+                    st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
+                    st.caption("vs. Vortag")
+
+                if ki_score >= 95: 
+                    st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
+                st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
+
+                st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
+                
+                cr1, cr2 = st.columns(2)
+                with cr1:
+                    sma200_val = sma200 if not pd.isna(sma200) else 0
+                    st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr (SMA200)</b><br>{sma200_val * eur_rate:.2f} €</div>", unsafe_allow_html=True)
+                with cr2:
+                    tgt = current_info.get('targetMeanPrice')
+                    if tgt:
+                        pot = ((tgt/curr_price)-1)*100
+                        col = "#00b894" if pot > 0 else "#ff7675"
+                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt * eur_rate:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
+
+            # --- TAB 2: BERECHNUNG ---
+            with tab_calc:
+                st.header("🧮 Risiko- & Positions-Planer")
+                st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
+                cc1, cc2 = st.columns(2)
+                inv = cc1.number_input("Invest (€)", value=2500.0, step=100.0)
+                risk_pct = cc1.slider("Stop Loss %", 1.0, 20.0, 5.0)
+                target_pct = cc2.slider("Take Profit %", 1.0, 100.0, 15.0)
+                
+                pcs = int(inv // curr_eur)
+                risk_eur = inv * (risk_pct/100)
+                prof_eur = inv * (target_pct/100)
+                crv = prof_eur / risk_eur if risk_eur > 0 else 0
+                
+                r1, r2, r3, r4 = st.columns(4)
+                r1.metric("Menge", f"{pcs} Stk.")
+                r2.metric("Stop Loss", f"{curr_eur*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
+                r3.metric("Take Profit", f"{curr_eur*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
+                r4.metric("CRV", f"{crv:.2f}")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                st.write("---")
+                st.subheader("💰 Dividenden-Rechner")
+                st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
+                
+                d_rate = current_info.get('dividendRate') or current_info.get('trailingAnnualDividendRate')
+                d_yield = current_info.get('dividendYield') or current_info.get('trailingAnnualDividendYield')
+                
+                if d_rate and curr_price > 0: calc_yield = d_rate / curr_price
+                elif d_yield: calc_yield = d_yield
+                else: calc_yield = 0
+                
+                if d_rate: calc_rate = d_rate
+                elif d_yield and curr_price > 0: calc_rate = d_yield * curr_price
+                else: calc_rate = 0
+
+                cd1, cd2 = st.columns(2)
+                with cd1: div_anzahl = st.number_input("Anzahl Aktien", value=pcs, step=1, help="Menge im Depot")
+                with cd2: st.metric("Dividenden-Rendite", f"{calc_yield*100:.2f}%")
+
+                if calc_rate > 0:
+                    div_ges_eur = div_anzahl * calc_rate * eur_rate
+                    c_res_d1, c_res_d2 = st.columns(2)
+                    c_res_d1.metric("Jährliche Ausschüttung (est.)", f"{div_ges_eur:.2f} €")
+                    c_res_d2.metric("Ø Monatlich", f"{div_ges_eur/12:.2f} €")
+                else:
+                    st.info("Dieses Unternehmen schüttet aktuell keine Dividende aus.")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # --- TAB 3: CHART ---
+            with tab_chart:
+                t_col1, t_col2 = st.columns([2, 2])
+                with t_col1:
+                    time_frame = st.radio("Zeitraum:", ["1 Tag", "1 Woche", "1 Monat"], index=1, horizontal=True, label_visibility="collapsed")
+                
+                if time_frame == "1 Tag": p, i = "1d", "5m"
+                elif time_frame == "1 Woche": p, i = "5d", "30m"
+                else: p, i = "1mo", "1d"
+                
+                chart_data = ticker.history(period=p, interval=i)
+                if not chart_data.empty:
+                    chart_data['Open'] = chart_data['Open'] * eur_rate
+                    chart_data['High'] = chart_data['High'] * eur_rate
+                    chart_data['Low'] = chart_data['Low'] * eur_rate
+                    chart_data['Close'] = chart_data['Close'] * eur_rate
+                    st.plotly_chart(plot_chart(chart_data, ticker_symbol, details), use_container_width=True)
+                else:
+                    st.error("Keine Chart-Daten verfügbar.")
+
+            # --- TAB 4: BASISDATEN ---
+            with tab_fund:
+                cf1, cf2 = st.columns(2)
+                cf1.write(f"**KGV:** {current_info.get('forwardPE', 'N/A')}")
+                cf1.write(f"**PEG:** {current_info.get('pegRatio', 'N/A')}")
+                cf1.write(f"**KUV:** {current_info.get('priceToSalesTrailing12Months', 'N/A')}")
+                cf2.write(f"**Sektor:** {current_info.get('sector', 'N/A')}")
+                cf2.write(f"**Dividende:** {calc_yield*100:.2f}%")
+                
+                h52 = current_info.get('fiftyTwoWeekHigh')
+                l52 = current_info.get('fiftyTwoWeekLow')
+                
+                val_h52 = f"{h52 * eur_rate:.2f} €" if h52 else "N/A"
+                val_l52 = f"{l52 * eur_rate:.2f} €" if l52 else "N/A"
+                
+                cf2.write(f"**52W Hoch:** {val_h52}")
+                cf2.write(f"**52W Tief:** {val_l52}")
+                
+                s50_val = details['sma50'] if not pd.isna(details['sma50']) else 0
+                s200_val = details['sma200'] if not pd.isna(details['sma200']) else 0
+                
+                cf2.write(f"**SMA 50:** {s50_val * eur_rate:.2f} €")
+                cf2.write(f"**SMA 200:** {s200_val * eur_rate:.2f} €")
+
+            # --- TAB 5: STAR SCANNER ---
+            with tab_scanner:
+                st.header("🌟 Star-Aktien Scanner (>= 95 Pkt)")
+                st.caption("Scannt die Märkte: AI/Tech, Space, Crypto-Mining und Defense.")
+                
+                tech_ai = ["NVDA", "MSFT", "AAPL", "GOOGL", "AMD", "TSM", "AVGO", "META", "PLTR", "SMCI", "ARM", "ORCL", "ADBE", "CRM", "AMZN", "NFLX"]
+                space = ["RKLB", "SPCE", "ASTS", "LUNR", "SIDU", "VSAT", "GSAT"]
+                crypto_mining = ["MARA", "RIOT", "CLSK", "MSTR", "COIN", "CORZ", "IREN", "HUT", "WULF", "BITF", "HIVE"]
+                defense = ["LMT", "RTX", "NOC", "GD", "LHX", "AVAV", "KTOS", "RHM.DE", "HENS.DE", "BA", "AIR.PA"]
+                
+                scan_list = list(set(tech_ai + space + crypto_mining + defense))
+                
+                if st.button("Markt-Scan starten"):
+                    results = []
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, s_ticker in enumerate(scan_list):
+                        progress_bar.progress((idx + 1) / len(scan_list))
+                        status_text.text(f"Analysiere {s_ticker}...")
+                        try:
+                            s_obj = yf.Ticker(s_ticker)
+                            
+                            try: s_info = s_obj.info
+                            except: s_info = {}
+                            if s_info is None: s_info = {}
+                            
+                            s_hist = s_obj.history(period="1y")
+                            
+                            if not s_hist.empty and len(s_hist) > 50:
+                                s_news = s_obj.news if s_obj.news else []
+                                
+                                _, _, _, _, s_score, _ = get_ki_verdict(s_obj, s_info, s_hist, s_news, weights)
+                                
+                                if s_score >= 95:
+                                    s_price = s_hist['Close'].iloc[-1] * eur_rate
+                                    cat = "Tech/AI"
+                                    if s_ticker in space: cat = "Space"
+                                    elif s_ticker in crypto_mining: cat = "Crypto/Mining"
+                                    elif s_ticker in defense: cat = "Defense/Drones"
+                                    
+                                    results.append({
+                                        "Ticker": s_ticker,
+                                        "Kategorie": cat,
+                                        "Preis (€)": round(s_price, 2),
+                                        "Score": s_score
+                                    })
+                        except:
+                            continue
+                            
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    if results:
+                        df_res = pd.DataFrame(results).sort_values(by="Preis (€)", ascending=True)
+                        st.success(f"{len(results)} Star-Aktien gefunden!")
+                        st.dataframe(df_res, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("Keine Aktien mit Score >= 95 in den Sektoren gefunden.")
+
+        else:
+            st.error("Keine Daten geladen (Ticker ungültig oder API Fehler).")
+    except Exception as e:
+        st.error(f"Kritischer Fehler: {e}")
+else:
+    with tab_main:
+        st.warning("⚠️ Bitte korrigiere die Gewichtung im Tab 'Deep Dive & Setup'.")
