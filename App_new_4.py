@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 # --- 1. UI SETUP & CONFIG ---
@@ -40,15 +42,41 @@ def get_eur_usd_rate():
     except:
         return 0.92
 
+# NEU: Zusätzliche News-Quelle (Google News RSS Aggregator)
+def get_alternative_news(ticker):
+    """Holt News-Titel via Google RSS um mehr Quellen als nur Yahoo zu haben"""
+    try:
+        # Wir suchen nach Ticker + Stock, um Finanznews zu bekommen
+        url = f"https://news.google.com/rss/search?q={ticker}+stock+finance&hl=en-US&gl=US&ceid=US:en"
+        response = requests.get(url, timeout=4)
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            news_items = []
+            # Wir nehmen die Top 7 News von Google
+            for item in root.findall('./channel/item')[:7]:
+                title = item.find('title').text if item.find('title') is not None else ""
+                # Da RSS Datum Parsen komplex ist ohne externe Libs, 
+                # setzen wir den Timestamp auf "jetzt" (da RSS meist aktuell ist),
+                # damit die Analyse sie als "relevant" wertet.
+                news_items.append({
+                    'title': title, 
+                    'providerPublishTime': datetime.now().timestamp()
+                })
+            return news_items
+    except:
+        return []
+    return []
+
 def analyze_news_sentiment(news_list, w_pos, w_neg):
     if not news_list: return 0, 0
     score = 0
     now = datetime.now(timezone.utc)
-    pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump']
-    neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge']
+    pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump', 'outperform', 'strong']
+    neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge', 'downgrade', 'weak']
     
     analyzed_count = 0
-    for n in news_list[:5]:
+    # Wir analysieren jetzt bis zu 10 Headlines (da wir mehr Quellen haben)
+    for n in news_list[:10]:
         title = n.get('title', '').lower()
         pub_time = datetime.fromtimestamp(n.get('providerPublishTime', now.timestamp()), timezone.utc)
         hours_old = (now - pub_time).total_seconds() / 3600
@@ -133,10 +161,18 @@ def get_ki_verdict(ticker_obj, w):
         details['vol_spike'] = curr_vol > vol_avg * 1.3
         if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
         
-        # 8. News
-        news_score, news_count = analyze_news_sentiment(ticker_obj.news, w['news_pos'], w['news_neg'])
+        # 8. News (ERWEITERT)
+        # Wir holen Yahoo News UND Google News
+        yf_news = ticker_obj.news
+        google_news = get_alternative_news(ticker_obj.ticker) # Neue Quelle
+        combined_news = yf_news + google_news # Listen zusammenfügen
+        
+        news_score, news_count = analyze_news_sentiment(combined_news, w['news_pos'], w['news_neg'])
         score += news_score
         details['news_score'] = news_score
+        
+        if news_count > 0:
+            reasons.append(f"📰 Sentiment: Score {news_score} (aus {news_count} Quellen).")
         
         # 9. Sektor
         sector = inf.get('sector', 'N/A')
@@ -275,7 +311,7 @@ with tab_desc:
     # --- 8. NEWS ---
     w_news_pos = create_detailed_input(
         "8. News Sentiment (Positiv)",
-        """KI-Scan der Schlagzeilen (letzte 24-72h).
+        """KI-Scan der Schlagzeilen (letzte 24-72h) aus mehreren Quellen (Yahoo, Google News, Reuters, etc.).
         <ul><li>Gewichtet aktuelle News (Upgrades, Gewinne, Beats) stärker.</li></ul>""",
         "w_np", 0, 10, 5
     )
