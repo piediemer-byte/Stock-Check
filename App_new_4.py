@@ -14,11 +14,12 @@ st.markdown("""
 .high-conviction { background: linear-gradient(90deg, #ffd700, #bf953f); color: #000; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 2px solid #fff; }
 .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; }
 .reversal-box { background: #1a1a1a; padding: 10px; border-radius: 8px; border: 1px dashed #ff4b4b; margin-top: 10px; text-align: center; height: 100%; }
-.weight-badge { background: #3d5afe; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75em; float: right; }
-.explain-text { font-size: 0.9em; color: #b0bec5; line-height: 1.5; margin-bottom: 5px; }
-.factor-title { font-weight: bold; font-size: 1.1em; color: #ffffff; margin-top: 12px; margin-bottom: 5px; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
+.explain-text { font-size: 0.85em; color: #b0bec5; line-height: 1.5; text-align: justify; }
+.explain-text ul { padding-left: 20px; margin-top: 5px; margin-bottom: 5px; }
+.factor-title { font-weight: bold; font-size: 1.05em; color: #ffffff; margin-top: 15px; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
 .budget-ok { color: #00b894; font-weight: bold; }
 .budget-err { color: #ff7675; font-weight: bold; }
+.slider-label { font-size: 0.8em; color: #fff; margin-bottom: -10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,7 +44,6 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
     if not news_list: return 0, 0
     score = 0
     now = datetime.now(timezone.utc)
-    # Vollständige Wortlisten wiederhergestellt
     pos_w_list = ['upgraded', 'buy', 'growth', 'beats', 'profit', 'bull', 'stark', 'chance', 'hoch', 'surge', 'soar', 'jump']
     neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge']
     
@@ -60,23 +60,21 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
     
     return round(score, 1), analyzed_count
 
-# --- 3. 11-FAKTOR KI-ENGINE (VOLLSTÄNDIG) ---
+# --- 3. 11-FAKTOR KI-ENGINE ---
 def get_ki_verdict(ticker_obj, w):
     try:
         inf = ticker_obj.info
         hist = ticker_obj.history(period="1y")
         
-        # Initialisierung
         details = {}
-        
         if len(hist) < 200: 
             return "➡️ Neutral", "Zu wenig historische Daten.", 0, 0, 50, {}
         
         curr_p = float(hist['Close'].iloc[-1])
-        score = 50 # Start-Score
+        score = 50 
         reasons = []
         
-        # 1. Trend (SMA 50/200)
+        # 1. Trend
         s200 = hist['Close'].rolling(200).mean().iloc[-1]
         s50 = hist['Close'].rolling(50).mean().iloc[-1]
         details['sma200'] = s200
@@ -84,15 +82,13 @@ def get_ki_verdict(ticker_obj, w):
         details['curr_p'] = curr_p
         
         if curr_p > s50 > s200: 
-            score += w['trend']
-            reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200) [+{w['trend']}]")
+            score += w['trend']; reasons.append(f"📈 Trend: Stark Bullish (über SMA 50/200) [+{w['trend']}]")
         elif curr_p < s200: 
-            score -= w['trend']
-            reasons.append(f"📉 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
+            score -= w['trend']; reasons.append(f"📉 Trend: Bearish (unter SMA 200) [-{w['trend']}]")
         else:
             reasons.append(f"➡️ Trend: Neutral (Konsolidierung).")
 
-        # 2. RSI (14)
+        # 2. RSI
         delta = hist['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -100,73 +96,56 @@ def get_ki_verdict(ticker_obj, w):
         rsi = 100 - (100 / (1 + rs.iloc[-1]))
         details['rsi'] = rsi
         
-        if rsi > 70: 
-            score -= w['rsi']
-            reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
-        elif rsi < 30: 
-            score += w['rsi']
-            reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
+        if rsi > 70: score -= w['rsi']; reasons.append(f"🔥 RSI: Überhitzt ({rsi:.1f}) [-{w['rsi']}]")
+        elif rsi < 30: score += w['rsi']; reasons.append(f"🧊 RSI: Überverkauft ({rsi:.1f}) [+{w['rsi']}]")
 
-        # 3. Volatilität (ATR)
+        # 3. Volatilität
         high_low = hist['High'] - hist['Low']
         atr = high_low.rolling(14).mean().iloc[-1]
         vola_ratio = (atr / curr_p) * 100
         details['atr_pct'] = vola_ratio
         
-        if vola_ratio > 4: 
-            score -= w['vola']
-            reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
+        if vola_ratio > 4: score -= w['vola']; reasons.append(f"⚠️ Vola: Hoch ({vola_ratio:.1f}%) [-{w['vola']}]")
 
-        # 4. & 5. Bilanz & Liquidität
+        # 4. Marge
         marge = inf.get('operatingMargins', 0)
         details['margin'] = marge
-        if marge > 0.15: 
-            score += w['margin']
-            reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%) [+{w['margin']}]")
+        if marge > 0.15: score += w['margin']; reasons.append(f"💰 Bilanz: Hohe Marge ({marge*100:.1f}%) [+{w['margin']}]")
         
+        # 5. Cash
         cash = inf.get('totalCash', 0) or 0
         debt = inf.get('totalDebt', 0) or 0
         details['net_cash'] = cash > debt
-        if cash > debt: 
-            score += w['cash']
-            reasons.append(f"🏦 Bilanz: Net-Cash vorhanden [+{w['cash']}]")
+        if cash > debt: score += w['cash']; reasons.append(f"🏦 Bilanz: Net-Cash vorhanden [+{w['cash']}]")
 
-        # 6. Bewertung (KGV/KUV)
+        # 6. Bewertung
         kgv = inf.get('forwardPE', -1)
         kuv = inf.get('priceToSalesTrailing12Months', -1)
         details['kgv'] = kgv
         details['kuv'] = kuv
         
-        if kgv and 0 < kgv < 18: 
-            score += w['value']
-            reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
-        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): 
-            score += w['value']
-            reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
+        if kgv and 0 < kgv < 18: score += w['value']; reasons.append(f"💎 Bewertung: KGV attraktiv ({kgv:.1f}) [+{w['value']}]")
+        elif (not kgv or kgv <= 0) and (kuv and 0 < kuv < 3): score += w['value']; reasons.append(f"🚀 Bewertung: KUV attraktiv ({kuv:.1f}) [+{w['value']}]")
         
         # 7. Volumen
         vol_avg = hist['Volume'].tail(20).mean()
         curr_vol = hist['Volume'].iloc[-1]
         details['vol_spike'] = curr_vol > vol_avg * 1.3
-        if details['vol_spike']: 
-            score += w['volume']
-            reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
+        if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
         
         # 8. News
         news_score, news_count = analyze_news_sentiment(ticker_obj.news, w['news_pos'], w['news_neg'])
         score += news_score
         details['news_score'] = news_score
         
-        # 9. Sektor-Benchmark
+        # 9. Sektor
         sector = inf.get('sector', 'N/A')
         details['sector'] = sector
         start_p = float(hist['Close'].iloc[0])
         ytd_perf = (curr_p / start_p) - 1
-        if start_p > 0 and ytd_perf > 0.2: 
-            score += w['sector']
-            reasons.append(f"🏆 Sektor: Top-Performer in {sector} [+{w['sector']}]")
+        if start_p > 0 and ytd_perf > 0.2: score += w['sector']; reasons.append(f"🏆 Sektor: Top-Performer ({sector}) [+{w['sector']}]")
 
-        # 10. MACD (Trend-Momentum)
+        # 10. MACD
         exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
         exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
         macd = exp1 - exp2
@@ -174,18 +153,14 @@ def get_ki_verdict(ticker_obj, w):
         is_bullish_macd = macd.iloc[-1] > signal.iloc[-1]
         details['macd_bull'] = is_bullish_macd
         
-        if is_bullish_macd:
-            score += w['macd']
-            reasons.append(f"🌊 MACD: Bullishes Momentum (Crossover) [+{w['macd']}]")
+        if is_bullish_macd: score += w['macd']; reasons.append(f"🌊 MACD: Bullishes Momentum [+{w['macd']}]")
 
-        # 11. PEG Ratio
+        # 11. PEG
         peg = inf.get('pegRatio')
         details['peg'] = peg
-        if peg is not None and 0.5 < peg < 1.5:
-            score += w['peg']
-            reasons.append(f"⚖️ PEG: Wachstum/Preis-Ratio optimal ({peg}) [+{w['peg']}]")
+        if peg is not None and 0.5 < peg < 1.5: score += w['peg']; reasons.append(f"⚖️ PEG: Wachstum/Preis optimal ({peg}) [+{w['peg']}]")
 
-        # Score Capping
+        # Capping
         score = min(100, max(0, score))
 
         if score >= 80: verdict = "💎 STRONG BUY"
@@ -198,105 +173,159 @@ def get_ki_verdict(ticker_obj, w):
     except Exception as e:
         return "⚠️ Error", str(e), 0, 0, 50, {}
 
-# --- 4. CHARTING FUNKTION (VOLLSTÄNDIG) ---
+# --- 4. CHART FUNKTION ---
 def plot_chart(hist, ticker_symbol, details):
     fig = go.Figure()
-
-    # Candlestick
-    fig.add_trace(go.Candlestick(x=hist.index,
-                    open=hist['Open'], high=hist['High'],
-                    low=hist['Low'], close=hist['Close'],
-                    name='Kurs'))
-
-    # SMA Linien
+    fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Kurs'))
     s50 = hist['Close'].rolling(window=50).mean()
     s200 = hist['Close'].rolling(window=200).mean()
-    
     fig.add_trace(go.Scatter(x=hist.index, y=s50, line=dict(color='#ff9f43', width=1.5), name='SMA 50'))
-    fig.add_trace(go.Scatter(x=hist.index, y=s200, line=dict(color='#2e86de', width=2), name='SMA 200 (Trend)'))
-
-    fig.update_layout(
-        title=f"Chart-Analyse: {ticker_symbol}",
-        yaxis_title='Preis ($)',
-        xaxis_rangeslider_visible=False,
-        template="plotly_dark",
-        height=500,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+    fig.add_trace(go.Scatter(x=hist.index, y=s200, line=dict(color='#2e86de', width=2), name='SMA 200'))
+    fig.update_layout(title=f"Chart-Analyse: {ticker_symbol}", yaxis_title='Preis ($)', xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
-# --- 5. MAIN APP STRUKTUR & LOGIK ---
+# --- 5. MAIN APP ---
 st.title("📈 KI-Analyse Tool (Custom)")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
-# TABS DEFINIEREN (Wir füllen Tab 4 zuerst, um die Weights zu bekommen!)
+# TABS (Tab 4 wird zuerst verarbeitet für Input)
 tab_main, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "📊 Chart", "🏢 Fundamentals", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
-# SCHRITT 1: TAB 4 - EINGABE & CONFIG (Zuerst ausführen für Weights)
+# TAB 4: SETUP & DETAILLIERTE ERKLÄRUNGEN
 # ==============================================================================
 with tab_desc:
     st.header("⚙️ Strategie-Matrix & Gewichtung")
-    st.markdown("Hier definierst du die Regeln. Passe die Slider an deine Strategie an. Änderungen wirken sich **sofort** auf das Dashboard aus.")
+    st.markdown("Passe hier die Regeln deiner Strategie an. Links findest du die **Erklärung**, rechts den **Einfluss (Punkte)**.")
     
     MAX_BUDGET = 100
     budget_container = st.container()
 
-    # Helper für sauberes Layout der Eingaben
-    def create_factor_input(title, desc, key, min_v, max_v, default_v):
+    # Layout Helper: Linke Spalte Text (60%), Rechte Spalte Slider (40%)
+    def create_detailed_input(title, text_html, key, min_v, max_v, default_v):
         st.markdown(f"<div class='factor-title'>{title}</div>", unsafe_allow_html=True)
-        c1, c2 = st.columns([3, 2])
+        c1, c2 = st.columns([3, 1])
         with c1:
-            st.markdown(f"<div class='explain-text'>{desc}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='explain-text'>{text_html}</div>", unsafe_allow_html=True)
         with c2:
-            return st.slider(f"Punkte", min_v, max_v, default_v, key=key, label_visibility="collapsed")
+            st.markdown(f"<div class='slider-label'>Punkte:</div>", unsafe_allow_html=True)
+            return st.slider("Pkt", min_v, max_v, default_v, key=key, label_visibility="collapsed")
 
-    # --- EINGABEN (SLIDER) ---
-    st.subheader("1. Technische Analyse")
-    w_trend = create_factor_input("1. Trend (SMA)", "Belohnt Kurse über dem 200-Tage-Durchschnitt (langfristiger Aufwärtstrend).", "w_t", 0, 30, 15)
-    w_rsi = create_factor_input("2. RSI (Indikator)", "Abzug bei Überhitzung (>70), Bonus bei Panik (<30).", "w_r", 0, 20, 10)
-    w_vola = create_factor_input("3. Volatilität (Malus)", "Punktabzug bei zu starken Schwankungen (>4% ATR).", "w_v", 0, 20, 5)
-    w_macd = create_factor_input("10. MACD Momentum", "Bonus für frisches Kaufsignal (Bullish Crossover).", "w_ma", 0, 20, 5)
+    # --- 1. TREND ---
+    w_trend = create_detailed_input(
+        "1. Markt-Phasierung (SMA 200)",
+        """Die Position zum <b>SMA 200</b> (200-Tage-Linie) ist der wichtigste Indikator für die "Großwetterlage".
+        <ul><li><b>Bullish:</b> Kurs darüber = Asset ist 'gesund'. Fonds nutzen dies als Kaufzone.</li>
+        <li><b>Bearish:</b> Kurs darunter = Verkäufer dominieren. Hohes Risiko.</li></ul>""",
+        "w_t", 0, 30, 15
+    )
 
-    st.subheader("2. Fundamentaldaten")
-    w_margin = create_factor_input("4. Marge", "Bonus für Unternehmen mit hoher Gewinnmarge (>15%).", "w_m", 0, 20, 10)
-    w_cash = create_factor_input("5. Bilanz (Net Cash)", "Bonus für mehr Bargeld als Schulden.", "w_c", 0, 20, 5)
-    w_value = create_factor_input("6. Bewertung (KGV/KUV)", "Punkte für günstige Bewertung (KGV < 18 oder KUV < 3).", "w_val", 0, 20, 10)
-    w_peg = create_factor_input("11. PEG Ratio", "Growth at a reasonable Price (PEG 0.5 - 1.5).", "w_p", 0, 20, 5)
+    # --- 2. RSI ---
+    w_rsi = create_detailed_input(
+        "2. Relative Stärke Index (RSI 14)",
+        """Misst die Geschwindigkeit der Kursbewegung (0-100).
+        <ul><li><b>Überkauft (>70):</b> Extreme Gier. Korrekturgefahr (Malus).</li>
+        <li><b>Überverkauft (<30):</b> Panik. Oft guter antizyklischer Einstieg (Bonus).</li></ul>""",
+        "w_r", 0, 20, 10
+    )
 
-    st.subheader("3. Markt & Sentiment")
-    w_volume = create_factor_input("7. Volumen", "Bonus, wenn das aktuelle Volumen deutlich über dem Durchschnitt liegt.", "w_vol", 0, 20, 10)
-    w_sector = create_factor_input("9. Sektor-Performance", "Bonus für Aktien, die den Markt schlagen (YTD > 20%).", "w_sec", 0, 20, 10)
-    w_news_pos = create_factor_input("8. News (Positiv)", "Punkte pro positiver Schlagzeile (KI-Sentiment).", "w_np", 0, 10, 5)
+    # --- 3. VOLATILITÄT ---
+    w_vola = create_detailed_input(
+        "3. Volatilität (Malus)",
+        """Die ATR (Average True Range) misst das "Marktrauschen".
+        <ul><li><b>Gefahr (>4%):</b> Bei hoher Vola wirst du oft unglücklich ausgestoppt.</li>
+        <li>Dies ist ein <b>Malus-Faktor</b>: Je höher die Vola, desto mehr Punkte Abzug.</li></ul>""",
+        "w_v", 0, 20, 5
+    )
+
+    # --- 4. MARGE ---
+    w_margin = create_detailed_input(
+        "4. Operative Marge",
+        """Beweist Preismacht. Kann das Unternehmen steigende Kosten weitergeben?
+        <ul><li><b>Ziel:</b> >15% Marge zeigt ein starkes Geschäftsmodell (Moat).</li></ul>""",
+        "w_m", 0, 20, 10
+    )
+
+    # --- 5. CASH ---
+    w_cash = create_detailed_input(
+        "5. Bilanz (Net-Cash)",
+        """Hat das Unternehmen mehr Cash als Schulden?
+        <ul><li><b>Vorteil:</b> Immun gegen hohe Zinsen und kann in Krisen Konkurrenten kaufen.</li></ul>""",
+        "w_c", 0, 20, 5
+    )
+
+    # --- 6. VALUE ---
+    w_value = create_detailed_input(
+        "6. Bewertung (KGV / KUV)",
+        """Wachstum darf nicht um jeden Preis gekauft werden.
+        <ul><li><b>KGV < 18:</b> Günstig für etablierte Firmen.</li>
+        <li><b>KUV < 3:</b> Günstig für Wachstumsfirmen (noch ohne Gewinn).</li></ul>""",
+        "w_val", 0, 20, 10
+    )
+    
+    # --- 7. VOLUMEN ---
+    w_volume = create_detailed_input(
+        "7. Volumen-Analyse",
+        """ "Volume precedes price". Steigt der Kurs bei hohem Volumen (>130% Ø)?
+        <ul><li><b>Signal:</b> Deutet auf "Groß-Käufe" durch Institutionen hin (Smart Money).</li></ul>""",
+        "w_vol", 0, 20, 10
+    )
+
+    # --- 8. NEWS ---
+    w_news_pos = create_detailed_input(
+        "8. News Sentiment (Positiv)",
+        """KI-Scan der Schlagzeilen (letzte 24-72h).
+        <ul><li>Gewichtet aktuelle News (Upgrades, Gewinne, Beats) stärker.</li></ul>""",
+        "w_np", 0, 10, 5
+    )
+
+    # --- 9. SEKTOR ---
+    w_sector = create_detailed_input(
+        "9. Relative Stärke (Sektor)",
+        """Wir suchen die "Alpha-Tiere".
+        <ul><li><b>Outperformance:</b> Aktie muss im letzten Jahr >20% gestiegen sein. Wir kaufen Stärke, keine Verlierer.</li></ul>""",
+        "w_sec", 0, 20, 10
+    )
+
+    # --- 10. MACD ---
+    w_macd = create_detailed_input(
+        "10. MACD Momentum",
+        """Trend-Folge-Indikator.
+        <ul><li><b>Crossover:</b> Bullishes Kreuzen der Signallinien deutet auf frisches Kauf-Momentum hin.</li></ul>""",
+        "w_ma", 0, 20, 5
+    )
+
+    # --- 11. PEG ---
+    w_peg = create_detailed_input(
+        "11. PEG Ratio",
+        """Königsklasse der Bewertung: KGV im Verhältnis zum Wachstum.
+        <ul><li><b>0.5 - 1.5:</b> "Growth at a reasonable Price" (GARP). Du zahlst fair für das Wachstum.</li></ul>""",
+        "w_p", 0, 20, 5
+    )
     
     st.divider()
-    st.caption("Malus-Faktor (zählt nicht ins Budget):")
-    w_news_neg = st.slider("Abzug pro negativer News", 0, 15, 7)
+    st.markdown("**Zusatz-Regel (Malus):**")
+    w_news_neg = st.slider("Abzug pro negativer News (zählt nicht ins Budget)", 0, 15, 7)
 
-    # --- BUDGET VALIDIERUNG ---
+    # --- BUDGET CHECK ---
     current_sum = w_trend + w_rsi + w_vola + w_margin + w_cash + w_value + w_peg + w_volume + w_sector + w_macd + w_news_pos
     
     with budget_container:
         st.write("---")
         c_bud1, c_bud2 = st.columns([3, 1])
         pct = min(current_sum / MAX_BUDGET, 1.0)
-        
         with c_bud1:
             if current_sum <= MAX_BUDGET:
-                st.markdown(f"**Vergebenes Strategie-Budget:** <span class='budget-ok'>{current_sum} / {MAX_BUDGET}</span>", unsafe_allow_html=True)
-                st.progress(pct, text="Gültige Konfiguration")
+                st.markdown(f"**Budget:** <span class='budget-ok'>{current_sum} / {MAX_BUDGET} Punkte</span> verwendet.", unsafe_allow_html=True)
+                st.progress(pct, text="Gültig")
                 valid_config = True
             else:
-                st.markdown(f"**Vergebenes Strategie-Budget:** <span class='budget-err'>{current_sum} / {MAX_BUDGET}</span>", unsafe_allow_html=True)
-                st.progress(1.0, text="Überschritten!")
-                st.error(f"Du hast {current_sum - MAX_BUDGET} Punkte zu viel vergeben! Bitte reduzieren.")
+                st.markdown(f"**Budget:** <span class='budget-err'>{current_sum} / {MAX_BUDGET} Punkte</span> (Zu viel!)", unsafe_allow_html=True)
+                st.progress(1.0, text="Ungültig")
+                st.error(f"Bitte reduziere die Punkte um {current_sum - MAX_BUDGET}.")
                 valid_config = False
 
-    # Dictionary erstellen
     weights = {
         'trend': w_trend, 'rsi': w_rsi, 'vola': w_vola, 'margin': w_margin, 'cash': w_cash, 
         'value': w_value, 'peg': w_peg, 'volume': w_volume, 'sector': w_sector, 
@@ -304,14 +333,14 @@ with tab_desc:
     }
 
 # ==============================================================================
-# SCHRITT 2: ANALYSE & DASHBOARD (Nur wenn Config gültig)
+# MAIN LOGIC (DASHBOARD ETC.)
 # ==============================================================================
 if valid_config:
     try:
         ticker = yf.Ticker(ticker_symbol)
         eur_rate = get_eur_usd_rate()
         
-        # Volle KI-Analyse
+        # KI Analyse
         verdict, reasons, vola, sma200, ki_score, details = get_ki_verdict(ticker, weights)
         
         hist_1y = ticker.history(period="1y")
@@ -322,91 +351,68 @@ if valid_config:
             prev_close = hist_1y['Close'].iloc[-2]
             change_pct = ((curr_price / prev_close) - 1) * 100
             
-            # --- TAB 1: DASHBOARD (Wieder vollständig hergestellt) ---
+            # --- TAB 1: DASHBOARD ---
             with tab_main:
-                # Header Area
-                c_head1, c_head2 = st.columns([2, 1])
-                with c_head1:
-                    st.subheader(f"{ticker.info.get('longName', ticker_symbol)} ({ticker_symbol})")
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    st.subheader(f"{ticker.info.get('longName', ticker_symbol)}")
                     if ki_score >= 85: 
-                        st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION: Elite-Setup erkannt!</div>", unsafe_allow_html=True)
-                    st.info(f"KI-Ergebnis: {verdict} (Score: {ki_score}/100)")
-                with c_head2:
-                    st.metric("Aktueller Kurs", f"{curr_eur:.2f} €", f"{change_pct:.2f}%")
+                        st.markdown("<div class='high-conviction'>🌟 HIGH CONVICTION SETUP</div>", unsafe_allow_html=True)
+                    st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
+                with c2:
+                    st.metric("Kurs", f"{curr_eur:.2f} €", f"{change_pct:.2f}%")
 
-                # Gründe anzeigen
-                st.markdown(f"**Analyse-Details (nach deiner Gewichtung):**")
                 st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
                 
-                # Reversal Box & Analyst Target (Wieder da!)
-                col_rev1, col_rev2 = st.columns(2)
-                with col_rev1:
+                # Reversal & Target
+                cr1, cr2 = st.columns(2)
+                with cr1:
                     st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr (SMA200)</b><br>{sma200 * eur_rate:.2f} €</div>", unsafe_allow_html=True)
-                with col_rev2:
-                    target = ticker.info.get('targetMeanPrice')
-                    if target:
-                        pot = ((target / curr_price) - 1) * 100
-                        color = "#00b894" if pot > 0 else "#ff7675"
-                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{target:.2f} $ (<span style='color:{color}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
+                with cr2:
+                    tgt = ticker.info.get('targetMeanPrice')
+                    if tgt:
+                        pot = ((tgt/curr_price)-1)*100
+                        col = "#00b894" if pot > 0 else "#ff7675"
+                        st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt:.2f}$ (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
 
                 st.write("---")
-                # Risiko-Rechner
                 st.subheader("🧮 Risiko-Rechner")
-                with st.container():
-                    st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-                    c_calc1, c_calc2 = st.columns(2)
-                    with c_calc1:
-                        invest = st.number_input("Investment (€)", value=2500.0, step=100.0)
-                        risk_pct = st.slider("Max Risiko (%)", 0.0, 20.0, 5.0, step=0.5)
-                    with c_calc2:
-                        tp_suggestion = risk_pct * 3
-                        target_pct = st.slider("Ziel-Profit (%)", 0.0, 100.0, tp_suggestion, step=1.0)
-                    
-                    stücke = int(invest // curr_eur)
-                    eff_inv = stücke * curr_eur
-                    sl_price = curr_eur * (1 - (risk_pct / 100))
-                    tp_price = curr_eur * (1 + (target_pct / 100))
-                    risk_eur = (eff_inv * (risk_pct/100))
-                    profit_eur = (eff_inv * (target_pct/100))
-                    crv = profit_eur / risk_eur if risk_eur > 0 else 0
-                    
-                    c_res1, c_res2, c_res3 = st.columns(3)
-                    c_res1.metric("Position", f"{stücke} Stk.", f"{eff_inv:.0f} €")
-                    c_res2.metric("Stop Loss", f"{sl_price:.2f} €", f"-{risk_eur:.2f} €", delta_color="inverse")
-                    c_res3.metric("Take Profit", f"{tp_price:.2f} €", f"+{profit_eur:.2f} €")
-                    st.caption(f"Chance-Risiko-Verhältnis (CRV): **{crv:.2f}**")
-                    st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
+                cc1, cc2 = st.columns(2)
+                inv = cc1.number_input("Invest (€)", value=2500.0, step=100.0)
+                risk_pct = cc1.slider("Stop Loss %", 1.0, 20.0, 5.0)
+                target_pct = cc2.slider("Take Profit %", 1.0, 100.0, 15.0)
+                
+                pcs = int(inv // curr_eur)
+                risk_eur = inv * (risk_pct/100)
+                prof_eur = inv * (target_pct/100)
+                
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Menge", f"{pcs} Stk.")
+                r2.metric("Stop Loss", f"{curr_eur*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
+                r3.metric("Take Profit", f"{curr_eur*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
+                st.markdown("</div>", unsafe_allow_html=True)
 
-            # --- TAB 2: CHART (Wieder mit Details) ---
+            # --- TAB 2: CHART ---
             with tab_chart:
                 st.plotly_chart(plot_chart(hist_1y, ticker_symbol, details), use_container_width=True)
 
             # --- TAB 3: FUNDAMENTALS ---
             with tab_fund:
-                inf = ticker.info
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    st.markdown("### 💰 Bewertung")
-                    st.write(f"**KGV (Forward):** {inf.get('forwardPE', 'N/A')}")
-                    st.write(f"**PEG Ratio:** {inf.get('pegRatio', 'N/A')}")
-                    st.write(f"**Price/Sales:** {inf.get('priceToSalesTrailing12Months', 'N/A')}")
-                    st.write(f"**Marktkap:** {inf.get('marketCap', 0) / 1e9:.2f} Mrd. $")
-                with col_f2:
-                    st.markdown("### 🏦 Bilanz & Dividende")
-                    div_yield = inf.get('dividendYield', 0)
-                    st.write(f"**Div-Rendite:** {div_yield * 100 if div_yield else 0:.2f}%")
-                    st.write(f"**Gewinnmarge:** {inf.get('profitMargins', 0) * 100:.2f}%")
-                    st.write(f"**Beta:** {inf.get('beta', 'N/A')}")
-                    st.write(f"**52W Hoch:** {inf.get('fiftyTwoWeekHigh', 'N/A')} $")
+                i = ticker.info
+                cf1, cf2 = st.columns(2)
+                cf1.write(f"**KGV:** {i.get('forwardPE', 'N/A')}")
+                cf1.write(f"**PEG:** {i.get('pegRatio', 'N/A')}")
+                cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
+                cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
+                cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
+                cf2.write(f"**52W Hoch:** {i.get('fiftyTwoWeekHigh', 'N/A')}")
         else:
-            st.error("Keine Historie gefunden.")
-            
+            st.error("Keine Daten geladen.")
     except Exception as e:
-        st.error(f"Fehler bei der Analyse: {e}")
-
+        st.error(f"Fehler: {e}")
 else:
-    # Fallback wenn Config ungültig
     with tab_main:
-        st.warning("⚠️ Bitte korrigiere deine Gewichtung im Tab 'Deep Dive & Setup' (Budget überschritten), um die Analyse zu sehen.")
+        st.warning("⚠️ Bitte korrigiere die Gewichtung im Tab 'Deep Dive & Setup'.")
