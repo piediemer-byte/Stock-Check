@@ -361,7 +361,8 @@ if valid_config:
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
                     st.caption("vs. Vortag")
 
-                if ki_score >= 85: 
+                # Schwellenwert auf 95 geändert
+                if ki_score >= 95: 
                     st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
                 st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
 
