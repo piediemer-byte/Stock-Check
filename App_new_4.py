@@ -249,7 +249,7 @@ st.title("📈 KI-Aktien-Analyse")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
-# TABS (Tab 5 "Star-Scanner" hinzugefügt)
+# TABS (Tab 4 wird zuerst verarbeitet für Input)
 tab_main, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "🌟 Star-Scanner", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
@@ -474,7 +474,6 @@ if valid_config:
                 d_rate = ticker.info.get('dividendRate') or ticker.info.get('trailingAnnualDividendRate')
                 d_yield = ticker.info.get('dividendYield') or ticker.info.get('trailingAnnualDividendYield')
                 
-                # Berechnung der Rendite
                 if d_rate and curr_price > 0:
                     calc_yield = d_rate / curr_price
                 elif d_yield:
@@ -482,7 +481,6 @@ if valid_config:
                 else:
                     calc_yield = 0
                 
-                # Berechnung der Rate
                 if d_rate:
                     calc_rate = d_rate
                 elif d_yield and curr_price > 0:
@@ -555,11 +553,18 @@ if valid_config:
             # --- TAB 5: STAR SCANNER (NEUER TAB) ---
             with tab_scanner:
                 st.header("🌟 Star-Aktien Scanner (>= 95 Pkt)")
-                st.caption("Scannt eine Auswahl beliebter Aktien auf 'Star'-Status.")
+                st.caption("Scannt die Märkte: AI/Tech, Space, Crypto-Mining und Defense nach Top-Performern.")
                 
-                scan_list = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "AMD", "PLTR", "COIN", "MSTR", "SMCI", "AVGO", "LLY", "NVO", "SAP", "SIE.DE", "ALV.DE"]
+                # Sektor-Listen definieren
+                tech_ai = ["NVDA", "MSFT", "AAPL", "GOOGL", "AMD", "TSM", "AVGO", "META", "PLTR", "SMCI", "ARM", "ORCL", "ADBE", "CRM", "AMZN", "NFLX"]
+                space = ["RKLB", "SPCE", "ASTS", "LUNR", "SIDU", "VSAT", "GSAT"]
+                crypto_mining = ["MARA", "RIOT", "CLSK", "MSTR", "COIN", "CORZ", "IREN", "HUT", "WULF", "BITF", "HIVE"]
+                defense = ["LMT", "RTX", "NOC", "GD", "LHX", "AVAV", "KTOS", "RHM.DE", "HENS.DE", "BA", "AIR.PA"]
                 
-                if st.button("Scan starten"):
+                # Alles in eine Liste packen und Duplikate entfernen
+                scan_list = list(set(tech_ai + space + crypto_mining + defense))
+                
+                if st.button("Markt-Scan starten"):
                     results = []
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -572,12 +577,21 @@ if valid_config:
                             # Analyse durchführen
                             _, _, _, _, s_score, _ = get_ki_verdict(s_obj, weights)
                             
+                            # NUR Score >= 95
                             if s_score >= 95:
                                 s_hist = s_obj.history(period="1d")
                                 if not s_hist.empty:
                                     s_price = s_hist['Close'].iloc[-1] * eur_rate
+                                    
+                                    # Kategorie bestimmen
+                                    cat = "Tech/AI"
+                                    if s_ticker in space: cat = "Space"
+                                    elif s_ticker in crypto_mining: cat = "Crypto/Mining"
+                                    elif s_ticker in defense: cat = "Defense/Drones"
+                                    
                                     results.append({
                                         "Ticker": s_ticker,
+                                        "Kategorie": cat,
                                         "Preis (€)": round(s_price, 2),
                                         "Score": s_score
                                     })
@@ -592,7 +606,7 @@ if valid_config:
                         st.success(f"{len(results)} Star-Aktien gefunden!")
                         st.dataframe(df_res, hide_index=True, use_container_width=True)
                     else:
-                        st.info("Keine Aktien mit Score >= 95 in der Auswahl gefunden.")
+                        st.info("Keine Aktien mit Score >= 95 in den Sektoren gefunden.")
 
         else:
             st.error("Keine Daten geladen.")
