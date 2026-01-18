@@ -23,29 +23,28 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. GEWICHTUNGS-KONFIGURATION & VALIDIERUNG (SIDEBAR) ---
-# Hier werden die Slider für die Gewichtung erstellt
 st.sidebar.header("⚙️ Strategie-Einstellungen")
 
 MAX_WEIGHT_BUDGET = 100 
 
-# Expander standardmäßig geöffnet, damit man die Einstellungen sieht
+# Expander standardmäßig geöffnet, damit die Einstellungen sofort sichtbar sind
 with st.sidebar.expander("📊 Kriterien-Gewichtung anpassen", expanded=True):
     st.caption(f"Verteile maximal **{MAX_WEIGHT_BUDGET} Punkte** auf die Kriterien.")
     
-    # Technische Analyse
+    # 1. Technische Analyse
     w_trend = st.slider("1. Trend (SMA)", 0, 30, 15)
     w_rsi = st.slider("2. RSI (Indikator)", 0, 20, 10)
     w_vola = st.slider("3. Volatilität (Malus)", 0, 20, 5)
     
     st.divider()
-    # Fundamentaldaten
+    # 2. Fundamentaldaten
     w_margin = st.slider("4. Marge (>15%)", 0, 20, 10)
     w_cash = st.slider("5. Net-Cash / Bilanz", 0, 20, 5)
     w_value = st.slider("6. Bewertung (KGV/KUV)", 0, 20, 10)
     w_peg = st.slider("11. PEG Ratio", 0, 20, 5)
     
     st.divider()
-    # Sonstiges
+    # 3. Momentum & Sonstiges
     w_volume = st.slider("7. Volumen-Spike", 0, 20, 10)
     w_sector = st.slider("9. Sektor-Performer", 0, 20, 10)
     w_macd = st.slider("10. MACD Momentum", 0, 20, 5)
@@ -53,17 +52,21 @@ with st.sidebar.expander("📊 Kriterien-Gewichtung anpassen", expanded=True):
     st.divider()
     st.caption("📰 News Sentiment Gewichtung")
     w_news_pos = st.slider("News Positiv (pro Artikel)", 0, 10, 5)
-    # Negativ News zählen nicht ins positive Budget, da sie Punkte abziehen
+    # Negativ News zählen nicht ins positive Budget (da Abzug), werden aber übergeben
     w_news_neg = st.slider("News Negativ (Malus)", 0, 15, 7)
 
     # --- Validierung des Budgets ---
+    # Summe aller positiven Gewichtungs-Faktoren
     current_weight_sum = (w_trend + w_rsi + w_vola + w_margin + w_cash + 
                           w_value + w_peg + w_volume + w_sector + w_macd + w_news_pos)
 
     st.divider()
     
     # Berechnung der Progress Bar
-    progress = min(current_weight_sum / MAX_WEIGHT_BUDGET, 1.0)
+    if MAX_WEIGHT_BUDGET > 0:
+        progress = min(current_weight_sum / MAX_WEIGHT_BUDGET, 1.0)
+    else:
+        progress = 1.0
     
     if current_weight_sum <= MAX_WEIGHT_BUDGET:
         st.markdown(f"**Genutztes Budget:** <span class='budget-ok'>{current_weight_sum} / {MAX_WEIGHT_BUDGET}</span>", unsafe_allow_html=True)
@@ -290,7 +293,7 @@ def plot_chart(hist, ticker_symbol, details):
 # --- 6. MAIN APP LOGIC ---
 st.title("📈 KI-Analyse Tool (Custom)")
 
-# Stop wenn Config ungültig
+# Stop wenn Config ungültig (Validierung Check)
 if not is_config_valid:
     st.warning("⚠️ **Analyse pausiert:** Deine Gewichtungs-Einstellungen überschreiten das maximale Budget von 100 Punkten. Bitte passe die Regler in der Sidebar an, um fortzufahren.")
     st.stop()
