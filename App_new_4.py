@@ -474,6 +474,11 @@ if valid_config:
                 div_yield = ticker.info.get('dividendYield', 0)
                 div_rate = ticker.info.get('dividendRate', 0)
                 
+                # Fallback für Yield, falls yfinance None liefert, aber eine Rate bekannt ist
+                if (div_yield is None or div_yield == 0) and div_rate and curr_price:
+                    div_yield = div_rate / curr_price
+                
+                # Fallback für Rate, falls yfinance None liefert, aber Yield bekannt ist
                 if (div_rate is None or div_rate == 0) and div_yield and curr_price:
                     div_rate = curr_price * div_yield
 
@@ -505,7 +510,10 @@ if valid_config:
                 cf1.write(f"**PEG:** {i.get('pegRatio', 'N/A')}")
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
-                cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
+                
+                # Dividende in Basisdaten korrigiert, falls Yield fehlt
+                display_yield = div_yield if div_yield else 0
+                cf2.write(f"**Dividende:** {display_yield*100:.2f}%")
                 
                 h52 = i.get('fiftyTwoWeekHigh')
                 l52 = i.get('fiftyTwoWeekLow')
