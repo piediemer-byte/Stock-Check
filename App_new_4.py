@@ -44,8 +44,12 @@ def get_eur_usd_rate():
 
 def get_alternative_news(ticker):
     try:
+        # User-Agent Header hinzugefügt, damit Google die Anfrage nicht blockiert
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         url = f"https://news.google.com/rss/search?q={ticker}+stock+finance&hl=en-US&gl=US&ceid=US:en"
-        response = requests.get(url, timeout=4)
+        response = requests.get(url, headers=headers, timeout=4)
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             news_items = []
@@ -216,7 +220,7 @@ st.title("📈 KI-Aktien-Analyse")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
-# TABS (Neuer Tab "Berechnung" hinzugefügt)
+# TABS (Tab 4 wird zuerst verarbeitet für Input)
 tab_main, tab_calc, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
@@ -380,6 +384,7 @@ if valid_config:
             
             # --- TAB 1: DASHBOARD ---
             with tab_main:
+                # Layout Änderung: Kurs oben, Urteil unten
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.subheader(f"{ticker.info.get('longName', ticker_symbol)}")
@@ -387,6 +392,7 @@ if valid_config:
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
                     st.caption("vs. Vortag")
 
+                # Schwellenwert auf 95
                 if ki_score >= 95: 
                     st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
                 st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
@@ -402,6 +408,7 @@ if valid_config:
                     if tgt:
                         pot = ((tgt/curr_price)-1)*100
                         col = "#00b894" if pot > 0 else "#ff7675"
+                        # Währungsanpassung hier:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt * eur_rate:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
