@@ -418,10 +418,19 @@ if valid_config:
                 cf1.write(f"**KUV:** {i.get('priceToSalesTrailing12Months', 'N/A')}")
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
                 cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
-                cf2.write(f"**52W Hoch:** {i.get('fiftyTwoWeekHigh', 'N/A')}")
-                cf2.write(f"**52W Tief:** {i.get('fiftyTwoWeekLow', 'N/A')}")
-                cf2.write(f"**SMA 50:** {details['sma50']:.2f} $")
-                cf2.write(f"**SMA 200:** {details['sma200']:.2f} $")
+                
+                # 52W Hoch / Tief in Euro
+                h52 = i.get('fiftyTwoWeekHigh')
+                l52 = i.get('fiftyTwoWeekLow')
+                
+                if h52: cf2.write(f"**52W Hoch:** {h52 * eur_rate:.2f} €")
+                else: cf2.write("**52W Hoch:** N/A")
+                
+                if l52: cf2.write(f"**52W Tief:** {l52 * eur_rate:.2f} €")
+                else: cf2.write("**52W Tief:** N/A")
+                
+                cf2.write(f"**SMA 50:** {details['sma50'] * eur_rate:.2f} €")
+                cf2.write(f"**SMA 200:** {details['sma200'] * eur_rate:.2f} €")
         else:
             st.error("Keine Daten geladen.")
     except Exception as e:
