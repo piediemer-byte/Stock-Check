@@ -190,7 +190,7 @@ search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
 # TABS (Tab 4 wird zuerst verarbeitet für Input)
-tab_main, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "📊 Chart", "🏢 Fundamentals", "⚙️ Deep Dive & Setup"])
+tab_main, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "📊 Chart", "🏢 Basisdaten", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
 # TAB 4: SETUP & DETAILLIERTE ERKLÄRUNGEN
@@ -400,7 +400,7 @@ if valid_config:
             with tab_chart:
                 st.plotly_chart(plot_chart(hist_1y, ticker_symbol, details), use_container_width=True)
 
-            # --- TAB 3: FUNDAMENTALS ---
+            # --- TAB 3: BASISDATEN ---
             with tab_fund:
                 i = ticker.info
                 cf1, cf2 = st.columns(2)
@@ -411,6 +411,8 @@ if valid_config:
                 cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
                 cf2.write(f"**52W Hoch:** {i.get('fiftyTwoWeekHigh', 'N/A')}")
                 cf2.write(f"**52W Tief:** {i.get('fiftyTwoWeekLow', 'N/A')}")
+                cf2.write(f"**SMA 50:** {details['sma50']:.2f} $")
+                cf2.write(f"**SMA 200:** {details['sma200']:.2f} $")
         else:
             st.error("Keine Daten geladen.")
     except Exception as e:
