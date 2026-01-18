@@ -42,22 +42,15 @@ def get_eur_usd_rate():
     except:
         return 0.92
 
-# NEU: Zusätzliche News-Quelle (Google News RSS Aggregator)
 def get_alternative_news(ticker):
-    """Holt News-Titel via Google RSS um mehr Quellen als nur Yahoo zu haben"""
     try:
-        # Wir suchen nach Ticker + Stock, um Finanznews zu bekommen
         url = f"https://news.google.com/rss/search?q={ticker}+stock+finance&hl=en-US&gl=US&ceid=US:en"
         response = requests.get(url, timeout=4)
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             news_items = []
-            # Wir nehmen die Top 7 News von Google
             for item in root.findall('./channel/item')[:7]:
                 title = item.find('title').text if item.find('title') is not None else ""
-                # Da RSS Datum Parsen komplex ist ohne externe Libs, 
-                # setzen wir den Timestamp auf "jetzt" (da RSS meist aktuell ist),
-                # damit die Analyse sie als "relevant" wertet.
                 news_items.append({
                     'title': title, 
                     'providerPublishTime': datetime.now().timestamp()
@@ -75,7 +68,6 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
     neg_w_list = ['risk', 'sell', 'loss', 'misses', 'bear', 'warnung', 'senkt', 'problem', 'tief', 'drop', 'fall', 'plunge', 'downgrade', 'weak']
     
     analyzed_count = 0
-    # Wir analysieren jetzt bis zu 10 Headlines (da wir mehr Quellen haben)
     for n in news_list[:10]:
         title = n.get('title', '').lower()
         pub_time = datetime.fromtimestamp(n.get('providerPublishTime', now.timestamp()), timezone.utc)
@@ -161,11 +153,10 @@ def get_ki_verdict(ticker_obj, w):
         details['vol_spike'] = curr_vol > vol_avg * 1.3
         if details['vol_spike']: score += w['volume']; reasons.append(f"📊 Volumen: Hohes Interesse [+{w['volume']}]")
         
-        # 8. News (ERWEITERT)
-        # Wir holen Yahoo News UND Google News
+        # 8. News
         yf_news = ticker_obj.news
-        google_news = get_alternative_news(ticker_obj.ticker) # Neue Quelle
-        combined_news = yf_news + google_news # Listen zusammenfügen
+        google_news = get_alternative_news(ticker_obj.ticker)
+        combined_news = yf_news + google_news
         
         news_score, news_count = analyze_news_sentiment(combined_news, w['news_pos'], w['news_neg'])
         score += news_score
@@ -225,8 +216,8 @@ st.title("📈 KI-Aktien-Analyse")
 search_query = st.text_input("Suche (Ticker):", value="NVDA")
 ticker_symbol = get_ticker_from_any(search_query)
 
-# TABS (Tab 4 wird zuerst verarbeitet für Input)
-tab_main, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "📊 Chart", "🏢 Basisdaten", "⚙️ Deep Dive & Setup"])
+# TABS (Neuer Tab "Berechnung" hinzugefügt)
+tab_main, tab_calc, tab_chart, tab_fund, tab_desc = st.tabs(["🚀 Dashboard", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "⚙️ Deep Dive & Setup"])
 
 # ==============================================================================
 # TAB 4: SETUP & DETAILLIERTE ERKLÄRUNGEN
@@ -389,7 +380,6 @@ if valid_config:
             
             # --- TAB 1: DASHBOARD ---
             with tab_main:
-                # Layout Änderung: Kurs oben, Urteil unten
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.subheader(f"{ticker.info.get('longName', ticker_symbol)}")
@@ -397,7 +387,6 @@ if valid_config:
                     st.metric("Kurs", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
                     st.caption("vs. Vortag")
 
-                # Schwellenwert auf 95
                 if ki_score >= 95: 
                     st.markdown("<div class='high-conviction'>🌟 Star Aktie</div>", unsafe_allow_html=True)
                 st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
@@ -413,13 +402,13 @@ if valid_config:
                     if tgt:
                         pot = ((tgt/curr_price)-1)*100
                         col = "#00b894" if pot > 0 else "#ff7675"
-                        # Währungsanpassung hier:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt * eur_rate:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
 
-                st.write("---")
-                st.subheader("🧮 Risiko-Rechner")
+            # --- TAB 2: BERECHNUNG (NEUER TAB) ---
+            with tab_calc:
+                st.header("🧮 Risiko- & Positions-Planer")
                 st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
                 cc1, cc2 = st.columns(2)
                 inv = cc1.number_input("Invest (€)", value=2500.0, step=100.0)
@@ -430,7 +419,7 @@ if valid_config:
                 risk_eur = inv * (risk_pct/100)
                 prof_eur = inv * (target_pct/100)
                 
-                # CRV Hinzugefügt
+                # CRV
                 crv = prof_eur / risk_eur if risk_eur > 0 else 0
                 
                 r1, r2, r3, r4 = st.columns(4)
@@ -441,11 +430,11 @@ if valid_config:
                 
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # --- TAB 2: CHART ---
+            # --- TAB 3: CHART ---
             with tab_chart:
                 st.plotly_chart(plot_chart(hist_1y, ticker_symbol, details), use_container_width=True)
 
-            # --- TAB 3: BASISDATEN ---
+            # --- TAB 4: BASISDATEN ---
             with tab_fund:
                 i = ticker.info
                 cf1, cf2 = st.columns(2)
@@ -455,7 +444,6 @@ if valid_config:
                 cf2.write(f"**Sektor:** {i.get('sector', 'N/A')}")
                 cf2.write(f"**Dividende:** {i.get('dividendYield', 0)*100:.2f}%")
                 
-                # 52W Hoch / Tief in Euro
                 h52 = i.get('fiftyTwoWeekHigh')
                 l52 = i.get('fiftyTwoWeekLow')
                 
