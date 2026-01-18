@@ -233,7 +233,7 @@ def get_ki_verdict(ticker_obj, w):
     except Exception as e:
         return "⚠️ Error", str(e), 0, 0, 50, {}
 
-# --- 4. CHART FUNKTION ---
+# --- 4. CHART FUNKTION (MIT EURO) ---
 def plot_chart(hist, ticker_symbol, details):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Kurs'))
@@ -241,7 +241,8 @@ def plot_chart(hist, ticker_symbol, details):
     s200 = hist['Close'].rolling(window=200).mean()
     fig.add_trace(go.Scatter(x=hist.index, y=s50, line=dict(color='#ff9f43', width=1.5), name='SMA 50'))
     fig.add_trace(go.Scatter(x=hist.index, y=s200, line=dict(color='#2e86de', width=2), name='SMA 200'))
-    fig.update_layout(title=f"Chart-Analyse: {ticker_symbol}", yaxis_title='Preis ($)', xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    # Achsen-Titel auf Euro geändert
+    fig.update_layout(title=f"Chart-Analyse: {ticker_symbol}", yaxis_title='Preis (€)', xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
 # --- 5. MAIN APP ---
@@ -527,6 +528,12 @@ if valid_config:
                 chart_data = ticker.history(period=p, interval=i)
                 
                 if not chart_data.empty:
+                    # HIER FINDET DIE UMRECHNUNG IN EURO STATT
+                    chart_data['Open'] = chart_data['Open'] * eur_rate
+                    chart_data['High'] = chart_data['High'] * eur_rate
+                    chart_data['Low'] = chart_data['Low'] * eur_rate
+                    chart_data['Close'] = chart_data['Close'] * eur_rate
+                    
                     st.plotly_chart(plot_chart(chart_data, ticker_symbol, details), use_container_width=True)
                 else:
                     st.error("Keine Chart-Daten verfügbar.")
