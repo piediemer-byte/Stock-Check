@@ -50,10 +50,11 @@ valid_config = current_budget <= MAX_BUDGET
 
 # --- 3. HELFER-FUNKTIONEN ---
 
-# Cache nur für Suche und News, NICHT für Preise
+# WICHTIG: Ticker-Suche MUSS gecached werden, um API-Calls zu sparen. 
 @st.cache_data(show_spinner=False)
 def get_ticker_from_any(query):
     query = query.strip()
+    # Wenn es wie ein Ticker aussieht (<=5 chars, kein Space), direkt nehmen.
     if len(query) <= 5 and " " not in query:
         return query.upper()
     try:
@@ -109,6 +110,40 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
         if any(w in title for w in neg_w_list): score -= w_neg
         count += 1
     return round(score, 1), count
+
+# --- NEUE FUNKTION: SMART PRICE FINDER ---
+def get_best_price_and_currency(ticker_obj, hist_live, hist_1y):
+    """
+    Versucht den ALLER-aktuellsten Preis zu finden.
+    Priorität:
+    1. Info 'currentPrice' (Echtzeit Snapshot)
+    2. Info 'regularMarketPrice'
+    3. Letzter 1m Close (Live History)
+    4. Letzter 1y Close (End-of-Day)
+    """
+    info = ticker_obj.info
+    price = None
+    
+    # Versuch 1: Info Dictionary (oft am schnellsten)
+    if 'currentPrice' in info and info['currentPrice'] is not None:
+        price = info['currentPrice']
+    elif 'regularMarketPrice' in info and info['regularMarketPrice'] is not None:
+        price = info['regularMarketPrice']
+        
+    # Versuch 2: Live History (1m)
+    if price is None and not hist_live.empty:
+        price = float(hist_live['Close'].iloc[-1])
+        
+    # Versuch 3: Standard History
+    if price is None and not hist_1y.empty:
+        price = float(hist_1y['Close'].iloc[-1])
+        
+    # Fallback
+    if price is None:
+        price = 0.0
+        
+    currency = info.get('currency', 'USD')
+    return price, currency
 
 # --- 4. KI-ENGINE ---
 def get_ki_verdict(ticker_obj, info_dict, hist_df, news_list, w):
@@ -266,18 +301,17 @@ with st.sidebar:
     st.info("Tipp: Nutze Ticker-Kürzel (NVDA, MSFT), falls die Namenssuche fehlschlägt.")
 
 # LIVE DATA FETCHING
-# TRICK für ECHTE Live-Daten: Wir holen zusätzlich 1-Minuten Daten
+# Wir nutzen hier KEIN Cache für History, damit Preise LIVE sind.
+# Aber wir fangen Fehler ab, falls Yahoo blockiert.
 try:
     ticker = yf.Ticker(ticker_symbol)
     with st.spinner(f"Lade Live-Daten für {ticker_symbol}..."):
-        try: current_info = ticker.info 
-        except: current_info = {}
+        try:
+            current_info = ticker.info 
+        except: 
+            current_info = {} # Info API ist oft flaky, wir machen weiter
             
-        # 1. Historie für Analyse & Chart (1 Jahr)
         hist_1y = ticker.history(period="1y") 
-        
-        # 2. EXTRA LIVE FETCH: 1-Minuten-Daten für den aktuellen Preis
-        # Das umgeht oft das Caching von Yahoo für Tagesdaten
         hist_live = ticker.history(period="1d", interval="1m")
         
         yf_news = ticker.news if ticker.news else []
@@ -292,7 +326,6 @@ except Exception as e:
 
 # --- GLOBALE BERECHNUNG ---
 if not hist_1y.empty and valid_config:
-    # Wir führen die KI Analyse auf den stabilen 1y Daten aus
     verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
 else:
     verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "Keine Daten verfügbar", 0, 0, 0, {}, {}
@@ -303,23 +336,29 @@ tab_main, tab_compare, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st
 ])
 
 if not valid_config:
-    st.error(f"⚠️ **Budget überschritten!** Du hast {current_budget}/100 Punkte vergeben.")
+    st.error(f"⚠️ **Budget überschritten!** Du hast {current_budget}/100 Punkte vergeben. Bitte korrigiere dies im Tab 'Deep Dive'.")
 
 # ==============================================================================
 # TAB 1: DASHBOARD
 # ==============================================================================
 with tab_main:
     if not hist_1y.empty and valid_config:
-        # PREIS LOGIK: Wenn Live-Daten (1m) da sind, nimm diesen Preis!
-        # Sonst nimm den letzten Preis aus der 1y Historie
-        if not hist_live.empty:
-            curr_price = float(hist_live['Close'].iloc[-1])
+        # SMART PRICE LOGIC
+        # Wir holen den Preis unabhängig von der History und prüfen die Währung
+        raw_price, currency_str = get_best_price_and_currency(ticker, hist_live, hist_1y)
+        
+        # Währungskonvertierung
+        if currency_str == "EUR":
+            curr_eur = raw_price
+            curr_usd = raw_price * (1/eur_rate)
+            currency_symbol = "€"
         else:
-            curr_price = float(hist_1y['Close'].iloc[-1])
-            
-        curr_eur = curr_price * eur_rate
+            curr_eur = raw_price * eur_rate
+            curr_usd = raw_price
+            currency_symbol = "$"
+
         prev_close = hist_1y['Close'].iloc[-2]
-        change_pct = ((curr_price / prev_close) - 1) * 100
+        change_pct = ((raw_price / prev_close) - 1) * 100
         
         col_dash_1, col_dash_2 = st.columns([1, 1.5])
         
@@ -333,8 +372,15 @@ with tab_main:
             k2.metric("RSI", f"{details.get('rsi',0):.1f}")
         
         with col_dash_2:
-            st.metric("Kurs (Live)", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
-            st.caption("vs. Vortag")
+            st.metric("Kurs (Live)", f"{curr_eur:.2f} € / {curr_usd:.2f} $", f"{change_pct:.2f}%")
+            if currency_str != "EUR" and currency_str != "USD":
+                st.caption(f"Originalwährung: {raw_price:.2f} {currency_str}")
+            else:
+                st.caption("vs. Vortag")
+
+            # Hinweis bei Währungsverwirrung (z.B. User sucht HIVE US statt HIVE DE)
+            if ticker_symbol == "HIVE" and currency_str == "USD":
+                st.info("ℹ️ Angezeigt wird die **US-Aktie** (Nasdaq) in Dollar. Für den deutschen Kurs suche nach **HIVE.DE** (Xetra).")
 
             if ki_score >= 95: 
                 st.markdown("<div class='high-conviction'>🌟 STAR AKTIE</div>", unsafe_allow_html=True)
@@ -351,15 +397,14 @@ with tab_main:
                 st.markdown(f"<div class='reversal-box'>🚨 <b>Trend-Umkehr (SMA200)</b><br>{sma200_val * eur_rate:.2f} €</div>", unsafe_allow_html=True)
             
             with cr2:
-                stock_currency = current_info.get('currency', 'USD')
-                conversion_rate = eur_rate if stock_currency != 'EUR' else 1.0
                 tgt = current_info.get('targetMeanPrice')
                 if not tgt: tgt = current_info.get('targetMedianPrice')
 
                 if tgt:
-                    pot = ((tgt/curr_price)-1)*100
+                    # Analysten Ziele sind meist in Originalwährung
+                    tgt_eur = tgt * eur_rate if currency_str != "EUR" else tgt
+                    pot = ((tgt/raw_price)-1)*100
                     col = "#00b894" if pot > 0 else "#ff7675"
-                    tgt_eur = tgt * conversion_rate
                     st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt_eur:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
@@ -407,7 +452,8 @@ with tab_compare:
 # TAB 3: BERECHNUNG
 with tab_calc:
     if not hist_1y.empty:
-        curr_p_eur = curr_price * eur_rate # Nehme Live-Preis
+        # Hier nutzen wir den Smart Price
+        calc_price = curr_eur # Ist bereits in EUR konvertiert oder original EUR
         
         st.header("🧮 Risiko- & Positions-Planer")
         st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -416,15 +462,15 @@ with tab_calc:
         risk_pct = cc1.slider("Stop Loss %", 1.0, 20.0, 5.0)
         target_pct = cc2.slider("Take Profit %", 1.0, 100.0, 15.0)
         
-        pcs = int(inv // curr_p_eur)
+        pcs = int(inv // calc_price)
         risk_eur = inv * (risk_pct/100)
         prof_eur = inv * (target_pct/100)
         crv = prof_eur / risk_eur if risk_eur > 0 else 0
         
         r1, r2, r3, r4 = st.columns(4)
         r1.metric("Menge", f"{pcs} Stk.")
-        r2.metric("Stop Loss", f"{curr_p_eur*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
-        r3.metric("Take Profit", f"{curr_p_eur*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
+        r2.metric("Stop Loss", f"{calc_price*(1-risk_pct/100):.2f} €", f"-{risk_eur:.2f}€")
+        r3.metric("Take Profit", f"{calc_price*(1+target_pct/100):.2f} €", f"+{prof_eur:.2f}€")
         r4.metric("CRV", f"{crv:.2f}")
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -434,12 +480,13 @@ with tab_calc:
         d_rate = current_info.get('dividendRate')
         d_yield = current_info.get('dividendYield')
         
-        if d_rate and curr_price > 0: calc_yield = d_rate / curr_price
+        # Rendite Berechnung auf Basis des Smart Prices
+        if d_rate and raw_price > 0: calc_yield = d_rate / raw_price
         elif d_yield: calc_yield = d_yield
         else: calc_yield = 0
         
         if d_rate: calc_rate = d_rate
-        elif d_yield: calc_rate = d_yield * curr_price
+        elif d_yield: calc_rate = d_yield * raw_price
         else: calc_rate = 0
 
         st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -448,7 +495,9 @@ with tab_calc:
         with cd2: st.metric("Dividenden-Rendite", f"{calc_yield*100:.2f}%")
 
         if calc_rate > 0:
-            div_ges_eur = div_anzahl * calc_rate * eur_rate
+            # Dividende ist meist in Originalwährung, Umrechnung nötig
+            div_val_eur = calc_rate if currency_str == "EUR" else calc_rate * eur_rate
+            div_ges_eur = div_anzahl * div_val_eur
             c_res_d1, c_res_d2 = st.columns(2)
             c_res_d1.metric("Jährliche Ausschüttung (est.)", f"{div_ges_eur:.2f} €")
             c_res_d2.metric("Ø Monatlich", f"{div_ges_eur/12:.2f} €")
