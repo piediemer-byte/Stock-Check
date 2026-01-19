@@ -12,7 +12,7 @@ st.set_page_config(page_title="KI-Analyse Intelligence Ultimate", layout="wide",
 
 st.markdown("""
 <style>
-/* V1 ORIGINAL STYLES (Wiederhergestellt) */
+/* V1 ORIGINAL STYLES */
 .status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.9em; white-space: pre-wrap; }
 .high-conviction { background: linear-gradient(90deg, #ffd700, #bf953f); color: #000; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 2px solid #fff; box-shadow: 0 0 15px rgba(253, 185, 49, 0.4); }
 .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 15px; }
@@ -49,7 +49,6 @@ valid_config = current_budget <= MAX_BUDGET
 # --- 3. HELFER-FUNKTIONEN (LIVE DATEN) ---
 
 def get_eur_usd_rate():
-    # Live Abruf
     try:
         hist = yf.Ticker("EURUSD=X").history(period="1d")
         if not hist.empty: return 1 / float(hist['Close'].iloc[-1])
@@ -102,7 +101,7 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
         count += 1
     return round(score, 1), count
 
-# --- 4. KI-ENGINE (Logik bleibt erhalten) ---
+# --- 4. KI-ENGINE ---
 def get_ki_verdict(ticker_obj, info_dict, hist_df, news_list, w):
     try:
         if len(hist_df) < 50: return "➡️ Neutral", "Zu wenig Daten", 0, 0, 50, {}, {}
@@ -250,6 +249,14 @@ except:
     hist_1y = pd.DataFrame()
     current_news = []
 
+# --- WICHTIG: GLOBALE BERECHNUNG VOR DEN TABS ---
+# Damit 'details' in ALLEN Tabs (auch Tab 5) verfügbar ist, berechnen wir es hier.
+if not hist_1y.empty and valid_config:
+    verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
+else:
+    # Fallback Werte, damit der Code nicht crasht
+    verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "", 0, 0, 0, {}, {}
+
 # TABS
 tab_main, tab_compare, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs([
     "🚀 Dashboard", "🆚 Peer-Vergleich", "🧮 Berechnung", "📊 Chart", "🏢 Basisdaten", "🌟 Scanner", "⚙️ Deep Dive & Setup"
@@ -259,37 +266,30 @@ if not valid_config:
     st.error(f"⚠️ **Budget überschritten!** Du hast {current_budget}/100 Punkte vergeben. Bitte korrigiere dies im Tab 'Deep Dive'.")
 
 # ==============================================================================
-# TAB 1: DASHBOARD (WIEDER ORIGINAL LAYOUT VOM ERSTEN CODE)
+# TAB 1: DASHBOARD
 # ==============================================================================
 with tab_main:
     if not hist_1y.empty and valid_config:
-        verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
         curr_price = hist_1y['Close'].iloc[-1]
         curr_eur = curr_price * eur_rate
         prev_close = hist_1y['Close'].iloc[-2]
         change_pct = ((curr_price / prev_close) - 1) * 100
         
-        # Original Dashboard Layout (Text & Boxen)
-        # Wir fügen das Radar Chart in eine linke Spalte ein, aber lassen den Rest im Original V1 Look
         col_dash_1, col_dash_2 = st.columns([1, 1.5])
         
         with col_dash_1:
-            # Name & Radar
             st.subheader(f"{current_info.get('longName', ticker_symbol)}")
             st.plotly_chart(plot_radar_chart(radar, ticker_symbol), use_container_width=True)
             
-            # Kennzahlen Grid
             st.markdown("---")
             k1, k2 = st.columns(2)
             k1.metric("Score", f"{ki_score} / 100")
             k2.metric("RSI", f"{details.get('rsi',0):.1f}")
         
         with col_dash_2:
-            # Original V1 Header Section
             st.metric("Kurs (Live)", f"{curr_eur:.2f} € / {curr_price:.2f} $", f"{change_pct:.2f}%")
             st.caption("vs. Vortag")
 
-            # High Conviction Badge Logic aus Code 1
             if ki_score >= 95: 
                 st.markdown("<div class='high-conviction'>🌟 STAR AKTIE</div>", unsafe_allow_html=True)
             elif ki_score >= 80:
@@ -297,10 +297,8 @@ with tab_main:
             
             st.info(f"KI-Urteil: {verdict} ({ki_score} Pkt)")
 
-            # Status Card (Reasons)
             st.markdown(f"<div class='status-card'>{reasons}</div>", unsafe_allow_html=True)
             
-            # Reversal & Analyst Boxen (Original Code 1 Style)
             cr1, cr2 = st.columns(2)
             with cr1:
                 sma200_val = sma200 if not pd.isna(sma200) else 0
@@ -329,6 +327,7 @@ with tab_compare:
         t2 = yf.Ticker(comp_ticker)
         h2 = t2.history(period="1y")
         if not h2.empty:
+            # Wir berechnen hier lokal für den Vergleich neu
             v1, _, _, _, s1, d1, r1 = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
             v2, _, _, _, s2, d2, r2 = get_ki_verdict(t2, t2.info, h2, [], weights)
             
