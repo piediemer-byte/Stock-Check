@@ -12,7 +12,7 @@ st.set_page_config(page_title="KI-Analyse Intelligence Ultimate", layout="wide",
 
 st.markdown("""
 <style>
-/* V1 ORIGINAL STYLES */
+/* STYLES */
 .status-card { background: #0d1117; padding: 12px; border-radius: 10px; border-left: 5px solid #3d5afe; margin-bottom: 15px; font-size: 0.9em; white-space: pre-wrap; }
 .high-conviction { background: linear-gradient(90deg, #ffd700, #bf953f); color: #000; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; border: 2px solid #fff; box-shadow: 0 0 15px rgba(253, 185, 49, 0.4); }
 .calc-box { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 15px; }
@@ -104,7 +104,7 @@ def analyze_news_sentiment(news_list, w_pos, w_neg):
 # --- 4. KI-ENGINE ---
 def get_ki_verdict(ticker_obj, info_dict, hist_df, news_list, w):
     try:
-        if len(hist_df) < 50: return "➡️ Neutral", "Zu wenig Daten", 0, 0, 50, {}, {}
+        if len(hist_df) < 50: return "➡️ Neutral", "Zu wenig Daten (unter 50 Tage).", 0, 0, 50, {}, {}
         
         details = {}
         radar_scores = {} 
@@ -226,14 +226,23 @@ def plot_chart(hist, symbol, eur_rate):
 
 # --- 6. MAIN APP ---
 st.title("📈 KI-Analyse Intelligence Ultimate")
+
+# --- ZENTRALE EINGABE (HAUPTBEREICH, NICHT SIDEBAR) ---
+col_search, col_btn = st.columns([4, 1])
+with col_search:
+    search_query = st.text_input("Aktie suchen (Ticker oder Name):", value="NVDA")
+with col_btn:
+    st.write("") # Spacer
+    st.write("") # Spacer
+    refresh = st.button("🔄 Refresh")
+
+ticker_symbol = get_ticker_from_any(search_query)
 eur_rate = get_eur_usd_rate()
 
 with st.sidebar:
-    search_query = st.text_input("Ticker Symbol:", value="NVDA")
-    ticker_symbol = get_ticker_from_any(search_query)
-    st.caption(f"Aktueller EUR/USD: {eur_rate:.4f}")
-    if st.button("🔄 Refresh Data"):
-        st.rerun()
+    st.markdown("### ⚙️ Einstellungen")
+    st.caption(f"EUR/USD Kurs: {eur_rate:.4f}")
+    st.info("Eingabe befindet sich jetzt oben im Hauptfenster.")
 
 # LIVE DATA FETCHING
 try:
@@ -249,13 +258,12 @@ except:
     hist_1y = pd.DataFrame()
     current_news = []
 
-# --- WICHTIG: GLOBALE BERECHNUNG VOR DEN TABS ---
-# Damit 'details' in ALLEN Tabs (auch Tab 5) verfügbar ist, berechnen wir es hier.
+# --- GLOBALE BERECHNUNG ---
 if not hist_1y.empty and valid_config:
     verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
 else:
-    # Fallback Werte, damit der Code nicht crasht
-    verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "", 0, 0, 0, {}, {}
+    # Defaults um Fehler zu vermeiden
+    verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "Keine Daten verfügbar", 0, 0, 0, {}, {}
 
 # TABS
 tab_main, tab_compare, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st.tabs([
@@ -317,6 +325,8 @@ with tab_main:
                     st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>{tgt_eur:.2f} € (<span style='color:{col}'>{pot:+.1f}%</span>)</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
+    else:
+        st.warning(f"Keine Daten für '{ticker_symbol}' gefunden oder ungültiger Ticker. Bitte prüfe die Eingabe oben.")
 
 # TAB 2: PEER VERGLEICH
 with tab_compare:
@@ -327,7 +337,6 @@ with tab_compare:
         t2 = yf.Ticker(comp_ticker)
         h2 = t2.history(period="1y")
         if not h2.empty:
-            # Wir berechnen hier lokal für den Vergleich neu
             v1, _, _, _, s1, d1, r1 = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
             v2, _, _, _, s2, d2, r2 = get_ki_verdict(t2, t2.info, h2, [], weights)
             
@@ -404,6 +413,8 @@ with tab_calc:
 with tab_chart:
     if not hist_1y.empty:
         st.plotly_chart(plot_chart(hist_1y, ticker_symbol, eur_rate), use_container_width=True)
+    else:
+        st.warning("Keine Chart-Daten verfügbar.")
 
 # TAB 5: BASISDATEN
 with tab_fund:
