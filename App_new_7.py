@@ -23,6 +23,8 @@ st.markdown("""
 .budget-ok { color: #00b894; font-weight: bold; }
 .budget-err { color: #ff7675; font-weight: bold; }
 .slider-label { font-size: 0.8em; color: #fff; margin-bottom: -10px; }
+.api-ok { color: #00b894; font-size: 0.8em; }
+.api-err { color: #ff7675; font-size: 0.8em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -46,7 +48,24 @@ current_budget = sum([v for k,v in weights.items() if k != 'news_neg'])
 MAX_BUDGET = 100
 valid_config = current_budget <= MAX_BUDGET
 
-# --- 3. HELFER-FUNKTIONEN (LIVE DATEN) ---
+# --- 3. HELFER-FUNKTIONEN ---
+
+# WICHTIG: Ticker-Suche MUSS gecached werden, um API-Calls zu sparen. 
+# Das Mapping "Name -> Symbol" ändert sich ja nicht live.
+@st.cache_data(show_spinner=False)
+def get_ticker_from_any(query):
+    query = query.strip()
+    # Wenn es wie ein Ticker aussieht, direkt zurückgeben
+    if len(query) <= 5 and " " not in query:
+        return query.upper()
+    
+    try:
+        search = yf.Search(query, max_results=1)
+        if search.quotes:
+            return search.quotes[0]['symbol']
+    except:
+        pass
+    return query.upper()
 
 def get_eur_usd_rate():
     try:
@@ -54,25 +73,6 @@ def get_eur_usd_rate():
         if not hist.empty: return 1 / float(hist['Close'].iloc[-1])
         return 0.92 
     except: return 0.92
-
-def get_ticker_from_any(query):
-    # Fix für "Keine Ergebnisse": 
-    # Wenn der User ein Ticker-Format eingibt (kurz, keine Leerzeichen), nutzen wir es direkt.
-    # Die Yahoo-Search API ist oft unzuverlässig bei Namen wie "Nvidia".
-    query = query.strip()
-    
-    # Direktes Return wenn es wie ein Ticker aussieht (<= 5 Zeichen)
-    if len(query) <= 5 and " " not in query:
-        return query.upper()
-
-    try:
-        search = yf.Search(query, max_results=1)
-        if search.quotes:
-            return search.quotes[0]['symbol']
-    except: 
-        pass
-    
-    return query.upper()
 
 @st.cache_data(ttl=300) 
 def get_alternative_news(ticker):
@@ -243,40 +243,62 @@ st.title("📈 KI-Analyse Intelligence Ultimate")
 # --- ZENTRALE EINGABE (HAUPTBEREICH) ---
 col_search, col_btn = st.columns([4, 1])
 with col_search:
-    # Hier direkt NVDA als Default, damit man gleich was sieht
     search_query = st.text_input("Aktie suchen (Ticker bevorzugt, z.B. NVDA):", value="NVDA")
 with col_btn:
     st.write("") # Spacer
     st.write("") # Spacer
     refresh = st.button("🔄 Refresh")
 
+# Auflösen des Tickers (MIT Cache für die Suche, um API zu schonen)
 ticker_symbol = get_ticker_from_any(search_query)
 eur_rate = get_eur_usd_rate()
 
 with st.sidebar:
-    st.markdown("### ⚙️ Einstellungen")
-    st.caption(f"EUR/USD Kurs: {eur_rate:.4f}")
-    st.info("Tipp: Nutze das Ticker-Kürzel (z.B. **NVDA**, **TSLA**, **RHM.DE**), wenn die Suche nach dem Namen fehlschlägt.")
+    st.markdown("### ⚙️ System Status")
+    
+    # SYSTEM CHECK BUTTON
+    if st.button("🔍 Verbindung testen"):
+        try:
+            test_ticker = yf.Ticker("AAPL")
+            # Wir versuchen nur ein Datum zu holen, um die Connection zu prüfen
+            test_hist = test_ticker.history(period="1d")
+            if not test_hist.empty:
+                st.markdown("<span class='api-ok'>✅ yfinance API erreichbar</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='api-err'>⚠️ API antwortet leer (Rate Limit?)</span>", unsafe_allow_html=True)
+        except Exception as e:
+            st.markdown(f"<span class='api-err'>❌ Fehler: {str(e)}</span>", unsafe_allow_html=True)
+            
+    st.caption(f"Aktueller EUR/USD: {eur_rate:.4f}")
+    st.caption(f"Interpretiertes Symbol: **{ticker_symbol}**")
+    st.info("Tipp: Nutze Ticker-Kürzel (NVDA, MSFT), falls die Namenssuche fehlschlägt.")
 
 # LIVE DATA FETCHING
+# Wir nutzen hier KEIN Cache für History, damit Preise LIVE sind.
+# Aber wir fangen Fehler ab, falls Yahoo blockiert.
 try:
     ticker = yf.Ticker(ticker_symbol)
     with st.spinner(f"Lade Live-Daten für {ticker_symbol}..."):
-        current_info = ticker.info 
+        try:
+            current_info = ticker.info 
+        except: 
+            current_info = {} # Info API ist oft flaky, wir machen weiter
+            
         hist_1y = ticker.history(period="1y") 
+        
         yf_news = ticker.news if ticker.news else []
         alt_news = get_alternative_news(ticker.ticker)
         current_news = yf_news + alt_news
-except:
+except Exception as e:
     current_info = {}
     hist_1y = pd.DataFrame()
     current_news = []
+    st.error(f"Kritischer Fehler beim Laden: {e}")
 
 # --- GLOBALE BERECHNUNG ---
 if not hist_1y.empty and valid_config:
     verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
 else:
-    # Defaults um Fehler zu vermeiden
     verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "Keine Daten verfügbar", 0, 0, 0, {}, {}
 
 # TABS
@@ -342,12 +364,14 @@ with tab_main:
     else:
         st.error(f"⚠️ Keine Daten für **'{ticker_symbol}'** gefunden.")
         st.markdown("""
-        **Mögliche Gründe:**
-        * Der Ticker ist falsch (z.B. "NVIDIA" statt "NVDA").
-        * Die Aktie ist an US-Börsen gelistet (versuche das US-Kürzel).
-        * Yahoo Finance API ist vorübergehend nicht erreichbar.
+        **Diagnose:**
+        1. Die Yahoo Finance API könnte deine Anfragen vorübergehend blockieren (Rate Limit), weil der Cache deaktiviert ist.
+        2. Die Suche nach dem Namen schlug fehl.
         
-        👉 **Tipp:** Versuche es mit dem direkten Ticker-Symbol (z.B. **NVDA** für Nvidia, **MSFT** für Microsoft, **RHM.DE** für Rheinmetall).
+        **Lösung:**
+        * Warte ein paar Sekunden.
+        * Prüfe in der Sidebar den "Verbindung testen" Button.
+        * Gib das **Ticker-Kürzel** direkt ein (z.B. **NVDA** statt Nvidia).
         """)
 
 # TAB 2: PEER VERGLEICH
