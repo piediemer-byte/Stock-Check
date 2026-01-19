@@ -50,21 +50,17 @@ valid_config = current_budget <= MAX_BUDGET
 
 # --- 3. HELFER-FUNKTIONEN ---
 
-# WICHTIG: Ticker-Suche MUSS gecached werden, um API-Calls zu sparen. 
-# Das Mapping "Name -> Symbol" ändert sich ja nicht live.
+# Cache nur für Suche und News, NICHT für Preise
 @st.cache_data(show_spinner=False)
 def get_ticker_from_any(query):
     query = query.strip()
-    # Wenn es wie ein Ticker aussieht, direkt zurückgeben
     if len(query) <= 5 and " " not in query:
         return query.upper()
-    
     try:
         search = yf.Search(query, max_results=1)
         if search.quotes:
             return search.quotes[0]['symbol']
-    except:
-        pass
+    except: pass
     return query.upper()
 
 def get_eur_usd_rate():
@@ -240,51 +236,49 @@ def plot_chart(hist, symbol, eur_rate):
 # --- 6. MAIN APP ---
 st.title("📈 KI-Analyse Intelligence Ultimate")
 
-# --- ZENTRALE EINGABE (HAUPTBEREICH) ---
+# --- ZENTRALE EINGABE ---
 col_search, col_btn = st.columns([4, 1])
 with col_search:
     search_query = st.text_input("Aktie suchen (Ticker bevorzugt, z.B. NVDA):", value="NVDA")
 with col_btn:
-    st.write("") # Spacer
-    st.write("") # Spacer
+    st.write("") 
+    st.write("") 
     refresh = st.button("🔄 Refresh")
 
-# Auflösen des Tickers (MIT Cache für die Suche, um API zu schonen)
 ticker_symbol = get_ticker_from_any(search_query)
 eur_rate = get_eur_usd_rate()
 
 with st.sidebar:
     st.markdown("### ⚙️ System Status")
-    
-    # SYSTEM CHECK BUTTON
     if st.button("🔍 Verbindung testen"):
         try:
             test_ticker = yf.Ticker("AAPL")
-            # Wir versuchen nur ein Datum zu holen, um die Connection zu prüfen
-            test_hist = test_ticker.history(period="1d")
+            test_hist = test_ticker.history(period="1d", interval="1m")
             if not test_hist.empty:
-                st.markdown("<span class='api-ok'>✅ yfinance API erreichbar</span>", unsafe_allow_html=True)
+                st.markdown("<span class='api-ok'>✅ yfinance Live-API OK</span>", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='api-err'>⚠️ API antwortet leer (Rate Limit?)</span>", unsafe_allow_html=True)
+                st.markdown("<span class='api-err'>⚠️ API antwortet leer</span>", unsafe_allow_html=True)
         except Exception as e:
             st.markdown(f"<span class='api-err'>❌ Fehler: {str(e)}</span>", unsafe_allow_html=True)
             
-    st.caption(f"Aktueller EUR/USD: {eur_rate:.4f}")
-    st.caption(f"Interpretiertes Symbol: **{ticker_symbol}**")
+    st.caption(f"EUR/USD: {eur_rate:.4f}")
+    st.caption(f"Symbol: **{ticker_symbol}**")
     st.info("Tipp: Nutze Ticker-Kürzel (NVDA, MSFT), falls die Namenssuche fehlschlägt.")
 
 # LIVE DATA FETCHING
-# Wir nutzen hier KEIN Cache für History, damit Preise LIVE sind.
-# Aber wir fangen Fehler ab, falls Yahoo blockiert.
+# TRICK für ECHTE Live-Daten: Wir holen zusätzlich 1-Minuten Daten
 try:
     ticker = yf.Ticker(ticker_symbol)
     with st.spinner(f"Lade Live-Daten für {ticker_symbol}..."):
-        try:
-            current_info = ticker.info 
-        except: 
-            current_info = {} # Info API ist oft flaky, wir machen weiter
+        try: current_info = ticker.info 
+        except: current_info = {}
             
+        # 1. Historie für Analyse & Chart (1 Jahr)
         hist_1y = ticker.history(period="1y") 
+        
+        # 2. EXTRA LIVE FETCH: 1-Minuten-Daten für den aktuellen Preis
+        # Das umgeht oft das Caching von Yahoo für Tagesdaten
+        hist_live = ticker.history(period="1d", interval="1m")
         
         yf_news = ticker.news if ticker.news else []
         alt_news = get_alternative_news(ticker.ticker)
@@ -292,11 +286,13 @@ try:
 except Exception as e:
     current_info = {}
     hist_1y = pd.DataFrame()
+    hist_live = pd.DataFrame()
     current_news = []
     st.error(f"Kritischer Fehler beim Laden: {e}")
 
 # --- GLOBALE BERECHNUNG ---
 if not hist_1y.empty and valid_config:
+    # Wir führen die KI Analyse auf den stabilen 1y Daten aus
     verdict, reasons, vola, sma200, ki_score, details, radar = get_ki_verdict(ticker, current_info, hist_1y, current_news, weights)
 else:
     verdict, reasons, vola, sma200, ki_score, details, radar = "N/A", "Keine Daten verfügbar", 0, 0, 0, {}, {}
@@ -307,14 +303,20 @@ tab_main, tab_compare, tab_calc, tab_chart, tab_fund, tab_scanner, tab_desc = st
 ])
 
 if not valid_config:
-    st.error(f"⚠️ **Budget überschritten!** Du hast {current_budget}/100 Punkte vergeben. Bitte korrigiere dies im Tab 'Deep Dive'.")
+    st.error(f"⚠️ **Budget überschritten!** Du hast {current_budget}/100 Punkte vergeben.")
 
 # ==============================================================================
 # TAB 1: DASHBOARD
 # ==============================================================================
 with tab_main:
     if not hist_1y.empty and valid_config:
-        curr_price = hist_1y['Close'].iloc[-1]
+        # PREIS LOGIK: Wenn Live-Daten (1m) da sind, nimm diesen Preis!
+        # Sonst nimm den letzten Preis aus der 1y Historie
+        if not hist_live.empty:
+            curr_price = float(hist_live['Close'].iloc[-1])
+        else:
+            curr_price = float(hist_1y['Close'].iloc[-1])
+            
         curr_eur = curr_price * eur_rate
         prev_close = hist_1y['Close'].iloc[-2]
         change_pct = ((curr_price / prev_close) - 1) * 100
@@ -365,13 +367,12 @@ with tab_main:
         st.error(f"⚠️ Keine Daten für **'{ticker_symbol}'** gefunden.")
         st.markdown("""
         **Diagnose:**
-        1. Die Yahoo Finance API könnte deine Anfragen vorübergehend blockieren (Rate Limit), weil der Cache deaktiviert ist.
-        2. Die Suche nach dem Namen schlug fehl.
+        1. Rate Limit von Yahoo Finance (zu viele Anfragen in kurzer Zeit).
+        2. Ticker existiert nicht oder ist falsch geschrieben.
         
         **Lösung:**
-        * Warte ein paar Sekunden.
-        * Prüfe in der Sidebar den "Verbindung testen" Button.
-        * Gib das **Ticker-Kürzel** direkt ein (z.B. **NVDA** statt Nvidia).
+        * Warte kurz.
+        * Prüfe den Ticker (z.B. NVDA).
         """)
 
 # TAB 2: PEER VERGLEICH
@@ -406,7 +407,7 @@ with tab_compare:
 # TAB 3: BERECHNUNG
 with tab_calc:
     if not hist_1y.empty:
-        curr_p_eur = hist_1y['Close'].iloc[-1] * eur_rate
+        curr_p_eur = curr_price * eur_rate # Nehme Live-Preis
         
         st.header("🧮 Risiko- & Positions-Planer")
         st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
@@ -433,12 +434,12 @@ with tab_calc:
         d_rate = current_info.get('dividendRate')
         d_yield = current_info.get('dividendYield')
         
-        if d_rate and hist_1y['Close'].iloc[-1] > 0: calc_yield = d_rate / hist_1y['Close'].iloc[-1]
+        if d_rate and curr_price > 0: calc_yield = d_rate / curr_price
         elif d_yield: calc_yield = d_yield
         else: calc_yield = 0
         
         if d_rate: calc_rate = d_rate
-        elif d_yield: calc_rate = d_yield * hist_1y['Close'].iloc[-1]
+        elif d_yield: calc_rate = d_yield * curr_price
         else: calc_rate = 0
 
         st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
