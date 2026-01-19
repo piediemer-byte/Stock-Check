@@ -56,10 +56,23 @@ def get_eur_usd_rate():
     except: return 0.92
 
 def get_ticker_from_any(query):
+    # Fix für "Keine Ergebnisse": 
+    # Wenn der User ein Ticker-Format eingibt (kurz, keine Leerzeichen), nutzen wir es direkt.
+    # Die Yahoo-Search API ist oft unzuverlässig bei Namen wie "Nvidia".
+    query = query.strip()
+    
+    # Direktes Return wenn es wie ein Ticker aussieht (<= 5 Zeichen)
+    if len(query) <= 5 and " " not in query:
+        return query.upper()
+
     try:
         search = yf.Search(query, max_results=1)
-        return search.quotes[0]['symbol'] if search.quotes else query.upper()
-    except: return query.upper()
+        if search.quotes:
+            return search.quotes[0]['symbol']
+    except: 
+        pass
+    
+    return query.upper()
 
 @st.cache_data(ttl=300) 
 def get_alternative_news(ticker):
@@ -227,10 +240,11 @@ def plot_chart(hist, symbol, eur_rate):
 # --- 6. MAIN APP ---
 st.title("📈 KI-Analyse Intelligence Ultimate")
 
-# --- ZENTRALE EINGABE (HAUPTBEREICH, NICHT SIDEBAR) ---
+# --- ZENTRALE EINGABE (HAUPTBEREICH) ---
 col_search, col_btn = st.columns([4, 1])
 with col_search:
-    search_query = st.text_input("Aktie suchen (Ticker oder Name):", value="NVDA")
+    # Hier direkt NVDA als Default, damit man gleich was sieht
+    search_query = st.text_input("Aktie suchen (Ticker bevorzugt, z.B. NVDA):", value="NVDA")
 with col_btn:
     st.write("") # Spacer
     st.write("") # Spacer
@@ -242,7 +256,7 @@ eur_rate = get_eur_usd_rate()
 with st.sidebar:
     st.markdown("### ⚙️ Einstellungen")
     st.caption(f"EUR/USD Kurs: {eur_rate:.4f}")
-    st.info("Eingabe befindet sich jetzt oben im Hauptfenster.")
+    st.info("Tipp: Nutze das Ticker-Kürzel (z.B. **NVDA**, **TSLA**, **RHM.DE**), wenn die Suche nach dem Namen fehlschlägt.")
 
 # LIVE DATA FETCHING
 try:
@@ -326,7 +340,15 @@ with tab_main:
                 else:
                     st.markdown(f"<div class='reversal-box'>🎯 <b>Analysten Ziel</b><br>N/A</div>", unsafe_allow_html=True)
     else:
-        st.warning(f"Keine Daten für '{ticker_symbol}' gefunden oder ungültiger Ticker. Bitte prüfe die Eingabe oben.")
+        st.error(f"⚠️ Keine Daten für **'{ticker_symbol}'** gefunden.")
+        st.markdown("""
+        **Mögliche Gründe:**
+        * Der Ticker ist falsch (z.B. "NVIDIA" statt "NVDA").
+        * Die Aktie ist an US-Börsen gelistet (versuche das US-Kürzel).
+        * Yahoo Finance API ist vorübergehend nicht erreichbar.
+        
+        👉 **Tipp:** Versuche es mit dem direkten Ticker-Symbol (z.B. **NVDA** für Nvidia, **MSFT** für Microsoft, **RHM.DE** für Rheinmetall).
+        """)
 
 # TAB 2: PEER VERGLEICH
 with tab_compare:
